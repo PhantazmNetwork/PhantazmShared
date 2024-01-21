@@ -1,1 +1,1 @@
-rootProject.name = "zombies-mapdata"
+rootProject.name = "commons"

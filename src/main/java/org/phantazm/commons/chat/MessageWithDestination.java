@@ -1,4 +1,4 @@
-package org.phantazm.zombies.map.chat;
+package org.phantazm.commons.chat;
 
 import net.kyori.adventure.text.Component;
 import org.jetbrains.annotations.NotNull;

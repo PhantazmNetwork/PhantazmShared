@@ -33,4 +33,5 @@ dependencies {
     implementation("com.github.steanky:ethylene-mapper:0.23.0")
     implementation("com.github.steanky:vector-core:0.9.2")
     implementation("net.kyori:adventure-api:4.11.0")
+    implementation("net.kyori:adventure-text-minimessage:4.11.0")
 }
