@@ -45,12 +45,26 @@ repositories {
 }
 
 dependencies {
+    implementation("com.github.steanky:element-core:0.16.0")
     implementation("com.github.steanky:ethylene-core:0.23.0")
     implementation("com.github.steanky:ethylene-mapper:0.23.0")
     implementation("com.github.steanky:vector-core:0.9.2")
     implementation("com.github.steanky:toolkit-collection:0.4.0")
     implementation("com.github.steanky:toolkit-function:0.4.0")
     implementation("net.kyori:adventure-api:4.11.0")
-    implementation("com.github.steanky:element-core:0.16.0")
     implementation("net.kyori:adventure-text-minimessage:4.11.0")
+
+    compileOnly("org.jetbrains:annotations:23.0.0")
+    testCompileOnly("org.jetbrains:annotations:23.0.0")
+
+    testImplementation("org.junit.jupiter:junit-jupiter-api:5.9.0")
+    testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:5.9.0")
+}
+
+tasks.withType<JavaCompile> {
+    options.encoding = "UTF-8"
+}
+
+tasks.getByName<Test>("test") {
+    useJUnitPlatform()
 }
