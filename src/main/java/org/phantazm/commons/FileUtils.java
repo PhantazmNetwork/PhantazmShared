@@ -81,6 +81,13 @@ public final class FileUtils {
         }
     }
 
+    public static void tryDelete(@NotNull Path file) {
+        try {
+            Files.delete(file);
+        } catch (IOException ignored) {
+        }
+    }
+
     /**
      * Recursively deletes all files in the given directory, if it exists.
      *
@@ -96,14 +103,14 @@ public final class FileUtils {
 
         Files.walkFileTree(directory, new SimpleFileVisitor<>() {
             @Override
-            public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
-                Files.delete(file);
+            public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
+                FileUtils.tryDelete(file);
                 return FileVisitResult.CONTINUE;
             }
 
             @Override
-            public FileVisitResult postVisitDirectory(Path dir, IOException exc) throws IOException {
-                Files.delete(dir);
+            public FileVisitResult postVisitDirectory(Path dir, IOException exc) {
+                FileUtils.tryDelete(dir);
                 return FileVisitResult.CONTINUE;
             }
         });
