@@ -49,8 +49,8 @@ class ExtensionHolderTest {
     @Test
     void setMany() {
         ExtensionHolder extensionHolder = new ExtensionHolder();
-        List<ExtensionHolder.Key<String>> keys = new ArrayList<>(20000);
-        for (int i = 0; i < 20000; i++) {
+        List<ExtensionHolder.Key<String>> keys = new ArrayList<>(50000);
+        for (int i = 0; i < 50000; i++) {
             keys.add(extensionHolder.requestKey(String.class));
         }
 
@@ -76,5 +76,14 @@ class ExtensionHolderTest {
 
         assertThrows(IllegalArgumentException.class, () -> otherHolder.get(key));
         assertThrows(IllegalArgumentException.class, () -> extensionHolder.get(otherKey));
+    }
+
+    @Test
+    void typeAssignability() {
+        ExtensionHolder extensionHolder = new ExtensionHolder();
+        ExtensionHolder.Key<Object> key = extensionHolder.requestKey(Object.class);
+
+        extensionHolder.set(key, "this is a string");
+        assertEquals("this is a string", extensionHolder.get(key));
     }
 }

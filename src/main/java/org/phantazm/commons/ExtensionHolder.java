@@ -19,33 +19,6 @@ public class ExtensionHolder {
     private static final AtomicInteger HOLDER_ID = new AtomicInteger();
     private static final int MINIMUM_SIZE = 10;
 
-    //used instead of AtomicReferenceArray because we want to be able to access the internal array directly sometimes
-    private static class AtomicObjectArray {
-        private static final VarHandle AA = MethodHandles.arrayElementVarHandle(Object[].class);
-
-        private final Object[] array;
-
-        private AtomicObjectArray(int length) {
-            this.array = new Object[length];
-        }
-
-        private Object get(int i) {
-            return AA.getVolatile(array, i);
-        }
-
-        private void set(int i, Object o) {
-            AA.setVolatile(array, i, o);
-        }
-
-        private Object getAndSet(int i, Object o) {
-            return AA.getAndSet(array, i, o);
-        }
-
-        private int length() {
-            return array.length;
-        }
-    }
-
     /**
      * A key, used to access an extension object. Instances can be obtained from
      * {@link ExtensionHolder#requestKey(Class)}.
@@ -69,11 +42,11 @@ public class ExtensionHolder {
 
     private final Object sync = new Object();
 
-    private volatile AtomicObjectArray array;
-
     private final AtomicInteger index;
-    private final AtomicInteger writeGuard;
     private final int id;
+
+    private volatile int resizeGuard;
+    private volatile Object[] array;
 
     /**
      * Creates a new instance of this class. This does not initialize the internal array; that will be done later if
@@ -81,13 +54,40 @@ public class ExtensionHolder {
      */
     public ExtensionHolder() {
         this.index = new AtomicInteger();
-        this.writeGuard = new AtomicInteger();
         this.id = HOLDER_ID.getAndIncrement();
+
+        this.resizeGuard = 0;
+    }
+
+    /**
+     * Static utils for volatile operations on arrays.
+     */
+    private static class VolatileArray {
+        private static final VarHandle AA = MethodHandles.arrayElementVarHandle(Object[].class);
+
+        private static Object get(Object[] array, int i) {
+            return AA.getVolatile(array, i);
+        }
+
+        private static void set(Object[] array, int i, Object o) {
+            AA.setVolatile(array, i, o);
+        }
+
+        private static Object getAndSet(Object[] array, int i, Object o) {
+            return AA.getAndSet(array, i, o);
+        }
     }
 
     private void validateKey(Key<?> key) {
         if (key.holderId != id) {
             throw new IllegalArgumentException("Key was requested from a different ExtensionHolder");
+        }
+    }
+
+    @SuppressWarnings("SameParameterValue")
+    private static void volatileArraycopy(Object[] source, int sourcePos, Object[] dest, int destPos, int length) {
+        for (int i = 0; i < length; i++) {
+            dest[destPos + i] = VolatileArray.get(source, sourcePos + i);
         }
     }
 
@@ -100,7 +100,7 @@ public class ExtensionHolder {
         }
     }
 
-    private int computeRequiredSize(int index) {
+    private static int computeRequiredSize(int index) {
         int requiredSize = index + 1;
         return requiredSize + (requiredSize >> 1);
     }
@@ -126,12 +126,12 @@ public class ExtensionHolder {
     public <T> T get(@NotNull Key<T> key) {
         validateKey(key);
 
-        AtomicObjectArray array = this.array;
-        if (array == null || key.index >= array.length()) {
+        Object[] array = this.array;
+        if (array == null || key.index >= array.length) {
             return null;
         }
 
-        return key.type.cast(array.get(key.index));
+        return key.type.cast(VolatileArray.get(array, key.index));
     }
 
     /**
@@ -149,20 +149,19 @@ public class ExtensionHolder {
     public <T> T set(@NotNull Key<T> key, @NotNull T object) {
         validateKeyAndObject(key, object);
 
-        AtomicObjectArray array = this.array;
+        Object[] array = this.array;
 
         boolean hasSavedOldValue = false;
         Object savedOldValue = null;
-        if (array != null && key.index < array.length()) {
+        if (array != null && key.index < array.length) {
             //the least significant bit of stamp will be 1 if we are currently resizing, and 0 if we are not
-            int stamp = writeGuard.get();
+            int stamp = resizeGuard;
             if ((stamp & 1) == 0) {
-                Object oldValue = array.getAndSet(key.index, object);
+                Object oldValue = VolatileArray.getAndSet(array, key.index, object);
 
-                //if the guard differs from the stamp, it means we completed an entire resize while we were setting the
-                //array value
+                //if the guard differs from the stamp, we either started or completed a resize and our write is invalid
                 //if the guard is the same as the stamp, our write succeeded and we can simply return
-                if (writeGuard.get() == stamp) {
+                if (resizeGuard == stamp) {
                     //we were able to set without acquiring a lock
                     return key.type.cast(oldValue);
                 }
@@ -178,35 +177,35 @@ public class ExtensionHolder {
 
             //array needs to be created
             if (array == null) {
-                AtomicObjectArray newArray = new AtomicObjectArray(Math.max(computeRequiredSize(key.index),
-                    MINIMUM_SIZE));
-                newArray.array[key.index] = object;
+                Object[] newArray = new Object[Math.max(computeRequiredSize(key.index), MINIMUM_SIZE)];
+                newArray[key.index] = object;
 
                 this.array = newArray;
                 return null;
             }
 
             //array exists, and can be indexed into without a resize
-            if (key.index < array.length()) {
+            if (key.index < array.length) {
                 //we ended up getting blocked by a resize
                 if (hasSavedOldValue) {
-                    array.set(key.index, object);
+                    VolatileArray.set(array, key.index, object);
                     return key.type.cast(savedOldValue);
                 }
 
-                return key.type.cast(array.getAndSet(key.index, object));
+                return key.type.cast(VolatileArray.getAndSet(array, key.index, object));
             }
 
-            writeGuard.incrementAndGet();
+            Object[] arrayCopy = new Object[computeRequiredSize(key.index)];
+
+            resizeGuard++;
             try {
-                AtomicObjectArray arrayCopy = new AtomicObjectArray(computeRequiredSize(key.index));
-                System.arraycopy(array.array, 0, arrayCopy.array, 0, array.array.length);
-                arrayCopy.array[key.index] = object;
+                volatileArraycopy(array, 0, arrayCopy, 0, array.length);
+                arrayCopy[key.index] = object;
 
                 this.array = arrayCopy;
                 return null;
             } finally {
-                writeGuard.incrementAndGet();
+                resizeGuard++;
             }
         }
     }
@@ -217,22 +216,23 @@ public class ExtensionHolder {
      */
     public void trimToSize() {
         synchronized (sync) {
-            AtomicObjectArray array = this.array;
+            Object[] array = this.array;
             int index = this.index.get();
 
-            if (array.length() <= index) {
+            if (array.length <= index) {
                 //size is already optimal
                 return;
             }
 
-            writeGuard.incrementAndGet();
+            Object[] arrayCopy = new Object[index];
+
+            resizeGuard++;
             try {
-                AtomicObjectArray arrayCopy = new AtomicObjectArray(index);
-                System.arraycopy(array.array, 0, arrayCopy.array, 0, arrayCopy.array.length);
+                volatileArraycopy(array, 0, arrayCopy, 0, arrayCopy.length);
 
                 this.array = arrayCopy;
             } finally {
-                writeGuard.incrementAndGet();
+                resizeGuard++;
             }
         }
     }
