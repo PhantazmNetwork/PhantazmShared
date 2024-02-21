@@ -84,13 +84,6 @@ public class ExtensionHolder {
         }
     }
 
-    @SuppressWarnings("SameParameterValue")
-    private static void volatileArraycopy(Object[] source, int sourcePos, Object[] dest, int destPos, int length) {
-        for (int i = 0; i < length; i++) {
-            dest[destPos + i] = VolatileArray.get(source, sourcePos + i);
-        }
-    }
-
     private void validateKeyAndObject(Key<?> key, Object object) {
         validateKey(key);
         Objects.requireNonNull(object);
@@ -199,7 +192,7 @@ public class ExtensionHolder {
 
             resizeGuard++;
             try {
-                volatileArraycopy(array, 0, arrayCopy, 0, array.length);
+                System.arraycopy(array, 0, arrayCopy, 0, array.length);
                 arrayCopy[key.index] = object;
 
                 this.array = arrayCopy;
@@ -228,7 +221,7 @@ public class ExtensionHolder {
 
             resizeGuard++;
             try {
-                volatileArraycopy(array, 0, arrayCopy, 0, arrayCopy.length);
+                System.arraycopy(array, 0, arrayCopy, 0, arrayCopy.length);
 
                 this.array = arrayCopy;
             } finally {
