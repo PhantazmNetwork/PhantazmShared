@@ -7,6 +7,7 @@ import java.lang.invoke.VarHandle;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Supplier;
 
 /**
  * A thread-safe container of "extension objects", which can be accessed using corresponding
@@ -18,6 +19,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class ExtensionHolder {
     private static final AtomicInteger HOLDER_ID = new AtomicInteger();
     private static final int MINIMUM_SIZE = 10;
+    private static final long HOLDER_ID_MASK = 0x0000_0000_FFFF_FFFFL;
 
     /**
      * A key, used to access an extension object. Instances can be obtained from
@@ -29,38 +31,91 @@ public class ExtensionHolder {
      */
     public static class Key<T> {
         private final Class<T> type;
-        private final int index;
+        private final int localIndex;
+        private final AtomicInteger inheritedIndex;
         private final int holderId;
+        private final long inheritance;
 
-        private Key(Class<T> type, int index, int holderId) {
+        private final AtomicInteger actualInheritedIndex = new AtomicInteger(-1);
+
+        private Key(Class<T> type, int localIndex, AtomicInteger inheritedIndex, int holderId, long inheritance) {
             this.type = type;
-            this.index = index;
+            this.localIndex = localIndex;
+            this.inheritedIndex = inheritedIndex;
             this.holderId = holderId;
+            this.inheritance = inheritance;
         }
 
+        private int getIndex(int id) {
+            if (id == holderId || inheritedIndex == null) {
+                return localIndex;
+            }
+
+            if (actualInheritedIndex.compareAndSet(-1, -2)) {
+                actualInheritedIndex.set(inheritedIndex.getAndIncrement());
+            }
+
+            int value;
+            do {
+                value = actualInheritedIndex.get();
+            }
+            while (value < 0);
+
+            return value;
+        }
     }
 
     private final Object sync = new Object();
 
-    private final AtomicInteger index;
+    private final AtomicInteger localIndex;
+    private final AtomicInteger inheritedIndex;
     private final int id;
 
+    /*
+    upper 32 bits are inheritance ID; lower 32 are the holder ID of the root extension holder
+    inheritance ID starts at 0 and increments by 1 for every successive "subclass" holder
+     */
+    private final long inheritance;
+
     private volatile int resizeGuard;
-    private volatile Object[] array;
+
+    private volatile Object[] localArray;
+    private volatile Object[] inheritedArray;
 
     /**
      * Creates a new instance of this class. This does not initialize the internal array; that will be done later if
      * needed. Therefore, it is generally cheap to create many instances of this class.
      */
     public ExtensionHolder() {
-        this.index = new AtomicInteger();
+        this.localIndex = new AtomicInteger();
+        this.inheritedIndex = null;
         this.id = HOLDER_ID.getAndIncrement();
+
+        this.inheritance = ((long) this.id) & HOLDER_ID_MASK;
 
         this.resizeGuard = 0;
     }
 
-    /**
-     * Static utils for volatile operations on arrays.
+    /*
+    this isn't actually a copy constructor
+     */
+    @SuppressWarnings("CopyConstructorMissesField")
+    private ExtensionHolder(ExtensionHolder parent) {
+        this.inheritedIndex = parent.inheritedIndex == null ? parent.localIndex : parent.inheritedIndex;
+        this.localIndex = new AtomicInteger();
+        this.id = HOLDER_ID.getAndIncrement();
+
+        this.resizeGuard = 0;
+
+        //zero if parent is the root of this inheritance
+        int parentInheritanceId = inheritanceId(parent.inheritance);
+
+        this.inheritance = ((long) (parentInheritanceId + 1) << 32) |
+            ((long) (parentInheritanceId == 0 ? parent.id : inheritanceRoot(parent.inheritance))) & HOLDER_ID_MASK;
+    }
+
+    /*
+    static utils for volatile operations on arrays
      */
     private static class VolatileArray {
         private static final VarHandle AA = MethodHandles.arrayElementVarHandle(Object[].class);
@@ -76,12 +131,35 @@ public class ExtensionHolder {
         private static Object getAndSet(Object[] array, int i, Object o) {
             return AA.getAndSet(array, i, o);
         }
+
+        @SuppressWarnings("SameParameterValue")
+        private static boolean compareAndSet(Object[] array, int i, Object expectedValue, Object newValue) {
+            return AA.compareAndSet(array, i, expectedValue, newValue);
+        }
     }
 
+    private static int inheritanceId(long inheritance) {
+        return (int) (inheritance >> 32);
+    }
+
+    private static int inheritanceRoot(long inheritance) {
+        return (int) (HOLDER_ID_MASK & inheritance);
+    }
+
+    /*
+    Superclass-constructed keys are valid for subclasses, but not vice-versa
+     */
     private void validateKey(Key<?> key) {
-        if (key.holderId != id) {
-            throw new IllegalArgumentException("Key was requested from a different ExtensionHolder");
+        //key must have the same inheritance root as this instance
+        //smaller inheritance ID = superclass
+        if (key.holderId != id && (inheritanceRoot(key.inheritance) != inheritanceRoot(this.inheritance) ||
+            inheritanceId(key.inheritance) > inheritanceId(this.inheritance))) {
+            throwKeyValidationIEE();
         }
+    }
+
+    private void throwKeyValidationIEE() {
+        throw new IllegalArgumentException("Key is not valid for this ExtensionHolder");
     }
 
     private void validateKeyAndObject(Key<?> key, Object object) {
@@ -93,20 +171,67 @@ public class ExtensionHolder {
         }
     }
 
+    private Object[] getArray(Key<?> key) {
+        return key.holderId != id ? inheritedArray : localArray;
+    }
+
+    private void setArray(Key<?> key, Object[] newValue) {
+        if (key.holderId != id) {
+            this.inheritedArray = newValue;
+        } else {
+            this.localArray = newValue;
+        }
+    }
+
+    private void createNewArrayForKey(Key<?> key, int index, Object object) {
+        Object[] newArray = new Object[Math.max(computeRequiredSize(index), MINIMUM_SIZE)];
+        newArray[index] = object;
+
+        setArray(key, newArray);
+    }
+
+    //only to be called when sync is held
+    @SuppressWarnings("NonAtomicOperationOnVolatileField")
+    private void resizeArrayForKey(Key<?> key, int index, Object[] array, Object object) {
+        Object[] arrayCopy = new Object[computeRequiredSize(index)];
+
+        resizeGuard++;
+        try {
+            System.arraycopy(array, 0, arrayCopy, 0, array.length);
+            arrayCopy[index] = object;
+
+            setArray(key, arrayCopy);
+        } finally {
+            resizeGuard++;
+        }
+    }
+
     private static int computeRequiredSize(int index) {
         int requiredSize = index + 1;
         return requiredSize + (requiredSize >> 1);
     }
 
     /**
-     * Creates a new key for this holder.
+     * Creates a new key for this holder. This key will be valid for derived ExtensionHolders, but not for holders for
+     * which this instance is derived.
      *
      * @param type the class of the extension object
      * @param <T>  the type of extension object
      * @return a new key
      */
     public <T> @NotNull Key<T> requestKey(@NotNull Class<T> type) {
-        return new Key<>(Objects.requireNonNull(type), index.getAndIncrement(), id);
+        return new Key<>(Objects.requireNonNull(type), this.localIndex.getAndIncrement(), inheritedIndex, id,
+            inheritance);
+    }
+
+    /**
+     * Creates a new {@link ExtensionHolder} derived from this one. The child ExtensionHolder can use keys requested
+     * from the parent, but the parent will be unable to use keys requested from the child.
+     *
+     * @return the derived holder
+     */
+    public @NotNull ExtensionHolder derive() {
+        return new ExtensionHolder(this);
     }
 
     /**
@@ -115,24 +240,108 @@ public class ExtensionHolder {
      * @param key the key
      * @param <T> the type of the extension object
      * @return the extension object, or {@code null} if such an object has not been set yet
+     * @throws IllegalArgumentException if the key is invalid for this holder
      */
     public <T> T get(@NotNull Key<T> key) {
         validateKey(key);
 
-        Object[] array = this.array;
-        if (array == null || key.index >= array.length) {
+        Object[] array = getArray(key);
+        int index = key.getIndex(id);
+
+        if (array == null || index >= array.length) {
             return null;
         }
 
-        return key.type.cast(VolatileArray.get(array, key.index));
+        return key.type.cast(VolatileArray.get(array, index));
+    }
+
+    /**
+     * Works identically to {@link ExtensionHolder#get(Key)}, but uses the provided {@link Supplier} to generate and
+     * return a default value if no extension object has been set for the given key.
+     *
+     * @param key             the key
+     * @param defaultSupplier the default value supplier
+     * @param <T>             the type of extension object
+     * @return the extension object, or default value (if present)
+     */
+    public <T> T getOrDefault(@NotNull Key<T> key, @NotNull Supplier<? extends T> defaultSupplier) {
+        validateKey(key);
+
+        Object[] array = getArray(key);
+        int index = key.getIndex(id);
+
+        if (array == null || index >= array.length) {
+            return defaultSupplier.get();
+        }
+
+        Object object = VolatileArray.get(array, index);
+        if (object == null) {
+            return defaultSupplier.get();
+        }
+
+        return key.type.cast(object);
+    }
+
+    /**
+     * Atomically sets the value at the given key, if it is absent. Returns {@code true} if the value was successfully
+     * set.
+     *
+     * @param key    the key
+     * @param object the value to set
+     * @param <T>    the object type
+     * @return true if the value was set (previously absent), false otherwise
+     */
+    public <T> boolean setIfAbsent(@NotNull Key<T> key, @NotNull T object) {
+        validateKeyAndObject(key, object);
+
+        Object[] array = getArray(key);
+        int index = key.getIndex(id);
+
+        if (array != null && index < array.length) {
+            int stamp = resizeGuard;
+            if ((stamp & 1) == 0) {
+                boolean casSucceeded = VolatileArray.compareAndSet(array, index, null, object);
+
+                //if we failed the CAS, it doesn't matter that we got blocked by an array resize
+                //if the CAS succeeded, and we were interrupted by a resize, we have to synchronize
+                if (!casSucceeded || resizeGuard == stamp) {
+                    return casSucceeded;
+                }
+
+                //casSucceeded && resizeGuard != stamp
+                synchronized (sync) {
+                    array = getArray(key);
+
+                    //make sure the value actually got set
+                    //(array can only grow on resize and cannot be set null, so we don't check index)
+                    VolatileArray.compareAndSet(array, index, null, object);
+                    return true;
+                }
+            }
+        }
+
+        synchronized (sync) {
+            array = getArray(key);
+
+            if (array == null) {
+                createNewArrayForKey(key, index, object);
+                return true;
+            }
+
+            if (index < array.length) {
+                return VolatileArray.compareAndSet(array, index, null, object);
+            }
+
+            resizeArrayForKey(key, index, array, object);
+            return true;
+        }
     }
 
     /**
      * Atomically sets a non-null extension object. A best-effort attempt will be made to avoid acquiring any locks.
      * This method may need to resize the internal array in order to fit the object. If it does so, the array will
      * generally have more capacity than is strictly needed to fit the element, in order to prevent unnecessary resizing
-     * in the future. If it is known that additional extension objects will not be added, users can call
-     * {@link ExtensionHolder#trimToSize()} to minimize the size of the array.
+     * in the future.
      *
      * @param key    the key used to set the extension object; must have been created by this extension holder
      * @param object the extension object to set, must be non-null
@@ -142,15 +351,16 @@ public class ExtensionHolder {
     public <T> T set(@NotNull Key<T> key, @NotNull T object) {
         validateKeyAndObject(key, object);
 
-        Object[] array = this.array;
+        Object[] array = getArray(key);
+        int index = key.getIndex(id);
 
         boolean hasSavedOldValue = false;
         Object savedOldValue = null;
-        if (array != null && key.index < array.length) {
+        if (array != null && index < array.length) {
             //the least significant bit of stamp will be 1 if we are currently resizing, and 0 if we are not
             int stamp = resizeGuard;
             if ((stamp & 1) == 0) {
-                Object oldValue = VolatileArray.getAndSet(array, key.index, object);
+                Object oldValue = VolatileArray.getAndSet(array, index, object);
 
                 //if the guard differs from the stamp, we either started or completed a resize and our write is invalid
                 //if the guard is the same as the stamp, our write succeeded and we can simply return
@@ -160,73 +370,35 @@ public class ExtensionHolder {
                 }
 
                 //blocked by resize
+                //our volatile set MIGHT have been eaten by the resize!
                 hasSavedOldValue = true;
                 savedOldValue = oldValue;
             }
         }
 
         synchronized (sync) {
-            array = this.array;
+            array = getArray(key);
 
             //array needs to be created
             if (array == null) {
-                Object[] newArray = new Object[Math.max(computeRequiredSize(key.index), MINIMUM_SIZE)];
-                newArray[key.index] = object;
-
-                this.array = newArray;
+                createNewArrayForKey(key, index, object);
                 return null;
             }
 
             //array exists, and can be indexed into without a resize
-            if (key.index < array.length) {
-                //we ended up getting blocked by a resize
+            if (index < array.length) {
                 if (hasSavedOldValue) {
-                    VolatileArray.set(array, key.index, object);
+                    VolatileArray.set(array, index, object);
+
+                    //return the value that should have been returned by the first getAndSet
                     return key.type.cast(savedOldValue);
                 }
 
-                return key.type.cast(VolatileArray.getAndSet(array, key.index, object));
+                return key.type.cast(VolatileArray.getAndSet(array, index, object));
             }
 
-            Object[] arrayCopy = new Object[computeRequiredSize(key.index)];
-
-            resizeGuard++;
-            try {
-                System.arraycopy(array, 0, arrayCopy, 0, array.length);
-                arrayCopy[key.index] = object;
-
-                this.array = arrayCopy;
-                return null;
-            } finally {
-                resizeGuard++;
-            }
-        }
-    }
-
-    /**
-     * Trims the internal array to optimal capacity. Does nothing if the array is already optimally sized. Should not be
-     * called if keys are still actively being requested, as that will only incur wasteful resizes and no benefit.
-     */
-    public void trimToSize() {
-        synchronized (sync) {
-            Object[] array = this.array;
-            int index = this.index.get();
-
-            if (array.length <= index) {
-                //size is already optimal
-                return;
-            }
-
-            Object[] arrayCopy = new Object[index];
-
-            resizeGuard++;
-            try {
-                System.arraycopy(array, 0, arrayCopy, 0, arrayCopy.length);
-
-                this.array = arrayCopy;
-            } finally {
-                resizeGuard++;
-            }
+            resizeArrayForKey(key, index, array, object);
+            return null;
         }
     }
 }
