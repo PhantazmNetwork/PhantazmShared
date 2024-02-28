@@ -57,6 +57,8 @@ class ExtensionHolderTest {
             extensionHolder.set(key, Integer.toString(i++));
         }
 
+        extensionHolder.trimToSize();
+
         int j = 0;
         for (ExtensionHolder.Key<String> key : keys) {
             assertEquals(Integer.toString(j++), extensionHolder.get(key));
@@ -160,6 +162,7 @@ class ExtensionHolderTest {
         mobKey.set(rootKey, "rootKey");
         mobKey.set(rootDerivationKey, 0);
 
+        mobKey.trimToSize();
         assertEquals("rootKey", mobKey.get(rootKey));
         assertEquals(0, mobKey.get(rootDerivationKey));
     }

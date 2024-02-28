@@ -312,9 +312,13 @@ public class ExtensionHolder {
                 synchronized (sync) {
                     array = getArray(key);
 
-                    //make sure the value actually got set
-                    //(array can only grow on resize and cannot be set null, so we don't check index)
-                    VolatileArray.compareAndSet(array, index, null, object);
+                    if (index < array.length) {
+                        //make sure the value actually got set
+                        VolatileArray.compareAndSet(array, index, null, object);
+                        return true;
+                    }
+
+                    resizeArrayForKey(key, index, array, object);
                     return true;
                 }
             }
@@ -399,6 +403,35 @@ public class ExtensionHolder {
 
             resizeArrayForKey(key, index, array, object);
             return null;
+        }
+    }
+
+    /**
+     * Trims any internal arrays to size.
+     */
+    public void trimToSize() {
+        synchronized (sync) {
+            Object[] localArray = this.localArray;
+            Object[] inheritedArray = this.inheritedArray;
+
+            resizeGuard++;
+            try {
+                int localIndex = this.localIndex.get();
+                if (localArray != null && localArray.length > localIndex) {
+                    Object[] copy = new Object[localIndex];
+                    System.arraycopy(localArray, 0, copy, 0, localIndex);
+                    this.localArray = copy;
+                }
+
+                int inheritedIndex;
+                if (inheritedArray != null && inheritedArray.length > (inheritedIndex = this.inheritedIndex.get())) {
+                    Object[] copy = new Object[inheritedIndex];
+                    System.arraycopy(inheritedArray, 0, copy, 0, inheritedIndex);
+                    this.inheritedArray = copy;
+                }
+            } finally {
+                resizeGuard++;
+            }
         }
     }
 }
