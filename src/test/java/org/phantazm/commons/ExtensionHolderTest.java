@@ -89,7 +89,7 @@ class ExtensionHolderTest {
     @Test
     void singleInheritance() {
         ExtensionHolder parent = new ExtensionHolder();
-        ExtensionHolder child = parent.derive();
+        ExtensionHolder child = parent.derive(false);
 
         var parentKey = parent.requestKey(String.class);
         var childKey = child.requestKey(String.class);
@@ -109,8 +109,8 @@ class ExtensionHolderTest {
     @Test
     void multiInheritance() {
         ExtensionHolder root = new ExtensionHolder();
-        ExtensionHolder middle = root.derive();
-        ExtensionHolder child = middle.derive();
+        ExtensionHolder middle = root.derive(false);
+        ExtensionHolder child = middle.derive(false);
 
         var rootKey = root.requestKey(String.class);
         var childKey = child.requestKey(String.class);
@@ -132,11 +132,11 @@ class ExtensionHolderTest {
         ExtensionHolder root = new ExtensionHolder();
         var rootKey = root.requestKey(String.class);
 
-        ExtensionHolder rootDerivation = root.derive();
+        ExtensionHolder rootDerivation = root.derive(false);
 
         var rootDerivationKey = rootDerivation.requestKey(Integer.class);
 
-        ExtensionHolder mobKey = rootDerivation.derive();
+        ExtensionHolder mobKey = rootDerivation.derive(false);
         mobKey.set(rootKey, "rootKey");
         mobKey.set(rootDerivationKey, 0);
 
@@ -149,8 +149,8 @@ class ExtensionHolderTest {
         ExtensionHolder root = new ExtensionHolder();
         var rootKey = root.requestKey(String.class);
 
-        ExtensionHolder rootDerivation = root.derive();
-        ExtensionHolder rootDerivation2 = root.derive();
+        ExtensionHolder rootDerivation = root.derive(false);
+        ExtensionHolder rootDerivation2 = root.derive(false);
 
         var firstKey = rootDerivation2.requestKey(String.class);
         var secondKey = rootDerivation2.requestKey(String.class);
@@ -158,7 +158,7 @@ class ExtensionHolderTest {
 
         var rootDerivationKey = rootDerivation.requestKey(Integer.class);
 
-        ExtensionHolder mobKey = rootDerivation.derive();
+        ExtensionHolder mobKey = rootDerivation.derive(false);
         mobKey.set(rootKey, "rootKey");
         mobKey.set(rootDerivationKey, 0);
 
@@ -174,8 +174,8 @@ class ExtensionHolderTest {
         var globalStringKey = mobRoot.requestKey(String.class);
         var globalIntegerKey = mobRoot.requestKey(Integer.class);
 
-        ExtensionHolder mobTypeRoot = mobRoot.derive();
-        ExtensionHolder mobTypeRoot1 = mobRoot.derive();
+        ExtensionHolder mobTypeRoot = mobRoot.derive(false);
+        ExtensionHolder mobTypeRoot1 = mobRoot.derive(false);
 
         var mobTypeRootKey = mobTypeRoot.requestKey(Boolean.class);
         var mobTypeRootKey1 = mobTypeRoot.requestKey(Float.class);
@@ -183,8 +183,8 @@ class ExtensionHolderTest {
         var mobTypeRootKey_1 = mobTypeRoot1.requestKey(Boolean.class);
         var mobTypeRootKey1_1 = mobTypeRoot1.requestKey(Float.class);
 
-        ExtensionHolder mobHolder1 = mobTypeRoot.derive();
-        ExtensionHolder mobHolder2 = mobTypeRoot1.derive();
+        ExtensionHolder mobHolder1 = mobTypeRoot.derive(false);
+        ExtensionHolder mobHolder2 = mobTypeRoot1.derive(false);
 
         mobHolder1.set(globalStringKey, "global value for mob 1");
         mobHolder1.set(globalIntegerKey, 69);

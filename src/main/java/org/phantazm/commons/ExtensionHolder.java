@@ -9,7 +9,41 @@ import java.lang.reflect.Field;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
+import java.util.concurrent.ConcurrentHashMap;
 
+/**
+ * A thread-safe holder of typed objects. Designed to be a faster and more concurrency-friendly data structure than
+ * {@link ConcurrentHashMap} for small sets of values, that are most often written once (but can tolerate concurrent
+ * writes well) and read extremely frequently.
+ * <p>
+ * Lock contention should be rare with this class. Synchronization is only used when resizing the internal array, which
+ * is necessarily a blocking operation, but this cannot block reads, only writes.
+ * <p>
+ * To access (read or write) values, first a key must be requested using the {@link ExtensionHolder#requestKey(Class)}
+ * method, which accepts a {@link Class} object as the data type to be stored (associated with the key). After, a value
+ * can be written using the {@link ExtensionHolder#set(Key, Object)} method, and read using the
+ * {@link ExtensionHolder#get(Key)} method.
+ * <p>
+ * Keys normally cannot be shared across different {@link ExtensionHolder}s, for either reading or writing. Attempting
+ * to do so will result in an {@link IllegalArgumentException}. However, it is possible to construct a "family" of
+ * ExtensionHolders which <i>do</i> allow key sharing. "Derived" holders may be constructed using
+ * {@link ExtensionHolder#derive(boolean)}. Keys requested from the "parent" holder may be used in the "derived" holder.
+ * However, <i>the reverse is not true</i>, as keys requested from a derived holder may not be used in any parent
+ * holders.
+ * <p>
+ * "Sibling" holders are any holders that share a parent. They can be created through multiple invocations of
+ * {@link ExtensionHolder#derive(boolean)} on the same object, or directly using the
+ * {@link ExtensionHolder#sibling(boolean)} method. Sibling holders all share keys; any key requested from holder
+ * {@code x} is usable in holder {@code y} if {@code y} is a sibling.
+ * <p>
+ * Although they share keys, related holders (parent-derivation or sibling-sibling) do not synchronize their values.
+ * That is, a value that is set on a holder will not become visible to a sibling or derivation, and vice-versa.
+ * <p>
+ * There are hard limits to both key requests and the number of "nested derivations" (i.e. derivations of derivations).
+ * Derivation chains may only go 7 levels deep, 8 if the initial parentless holder is considered. Additionally, for each
+ * "family tree" of holders, it is not possible to request more than 65536 keys. Attempting to exceed either of this
+ * limits will result in an {@link IllegalStateException} being thrown in the appropriate method call.
+ */
 public class ExtensionHolder {
     private static final AtomicInteger HOLDER_ID = new AtomicInteger();
     private static final int MINIMUM_SIZE = 10;
@@ -95,6 +129,12 @@ public class ExtensionHolder {
         }
     }
 
+    /**
+     * Represents a key to retrieve a typed value from an {@link ExtensionHolder}. Each ExtensionHolder is capable of
+     * holding any number of types of values. Therefore, this object provides the necessary type information.
+     *
+     * @param <T> the type of value to retrieve
+     */
     public static class Key<T> {
         private final Class<T> type;
         private final int index;
@@ -139,15 +179,40 @@ public class ExtensionHolder {
         this.indices = new IndexHolder();
     }
 
-    @SuppressWarnings("CopyConstructorMissesField")
-    private ExtensionHolder(ExtensionHolder parent) {
+    private ExtensionHolder(ExtensionHolder other, boolean isParent, boolean copyValues) {
         this.id = HOLDER_ID.getAndIncrement();
 
-        this.inheritanceRoot = parent.inheritanceId == 0 ? parent.id : parent.inheritanceRoot;
-        this.inheritanceId = parent.inheritanceId + 1;
-        this.keysRequested = parent.keysRequested;
+        if (copyValues) {
+            Object[] otherArray = other.array;
+            if (otherArray != null) {
+                Object[] ourArray = new Object[otherArray.length];
+                System.arraycopy(otherArray, 0, ourArray, 0, ourArray.length);
+                this.array = ourArray;
+            }
+        }
 
-        this.indices = parent.indices;
+        if (isParent) {
+            this.inheritanceRoot = other.inheritanceId == 0 ? other.id : other.inheritanceRoot;
+            this.inheritanceId = other.inheritanceId + 1;
+            this.keysRequested = other.keysRequested;
+
+            this.indices = other.indices;
+            return;
+        }
+
+        if (other.inheritanceRoot == other.id) {
+            //our sibling has no parent, so we shouldn't either
+            this.inheritanceRoot = this.id;
+            this.inheritanceId = 0;
+            this.keysRequested = new AtomicInteger();
+            this.indices = new IndexHolder();
+        } else {
+            //otherwise, we share inheritance information with our sibling
+            this.inheritanceRoot = other.inheritanceRoot;
+            this.inheritanceId = other.inheritanceId;
+            this.keysRequested = other.keysRequested;
+            this.indices = other.indices;
+        }
     }
 
     private void throwKeyValidationIEE() {
@@ -200,6 +265,10 @@ public class ExtensionHolder {
     /**
      * Creates a new key for this holder. This key will be valid for derived ExtensionHolders, but not for holders for
      * which this instance is derived.
+     * <p>
+     * Up to {@code 65536} keys may be requested for any given family tree of {@link ExtensionHolder}s. In other words,
+     * this limit is shared between siblings, as well as parents and derivations. Attempting to exceed this limit will
+     * result in an {@link IllegalStateException}.
      *
      * @param type the class of the extension object
      * @param <T>  the type of extension object
@@ -220,17 +289,42 @@ public class ExtensionHolder {
 
     /**
      * Creates a new {@link ExtensionHolder} derived from this one. The child ExtensionHolder can use keys requested
-     * from the parent, but the parent will be unable to use keys requested from the child. No data is copied over; the
-     * child holder will be initially empty.
+     * from the parent, but the parent will be unable to use keys requested from the child.
+     * <p>
+     * There is a hard derivation depth (that is, derivations of derivations) limit of 7. Attempting to go beyond this
+     * limit will result in a {@link IllegalStateException}. Similarly, parents and derivations will share the hard key
+     * request limit of {@code 65536}.
+     * <p>
+     * If copyValues is {@code true}, values from the parent will be copied to the child once at initialization. Values
+     * added to the parent after copying will <i>not</i> be visible in the child (and vice-versa).
      *
+     * @param copyValues whether to initialize the derivation with the same values as this instance (the parent)
      * @return the derived holder
      */
-    public @NotNull ExtensionHolder derive() {
+    public @NotNull ExtensionHolder derive(boolean copyValues) {
         if (this.inheritanceId >= 7) {
             throw new IllegalStateException("Cannot derive further from this ExtensionHolder");
         }
 
-        return new ExtensionHolder(this);
+        return new ExtensionHolder(this, true, copyValues);
+    }
+
+    /**
+     * Creates a new {@link ExtensionHolder} that is a "sibling" of this one. That is, the created holder will share the
+     * same parent as its sibling. All keys valid for one sibling are valid for other siblings.
+     * <p>
+     * Since siblings do not increase the derivation depth, this method can be called any number of times. However,
+     * siblings (as well as any derivations of siblings, and their parents) will share the key request limit of
+     * {@code 65536}.
+     * <p>
+     * If copyValues is {@code true}, values from this instance will be copied to the sibling once at initialization.
+     * Values added to the new sibling after copying will <i>not</i> be visible in this instance (and vice-versa).
+     *
+     * @param copyValues whether the newly-created sibling will be initialized with the same values as this instance
+     * @return a new sibling ExtensionHolder
+     */
+    public @NotNull ExtensionHolder sibling(boolean copyValues) {
+        return new ExtensionHolder(this, false, copyValues);
     }
 
     /**
