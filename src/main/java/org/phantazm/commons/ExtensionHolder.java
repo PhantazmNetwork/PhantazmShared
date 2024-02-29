@@ -16,6 +16,8 @@ public class ExtensionHolder {
 
     /*
     atomic operations on 'high' and 'low' long values (for combined 128 bits), grouped into 16-bit chunks
+    each 16-bit chunk can be simultaneously added to
+    this class does not implement "overflow" protection for chunks, that must be checked externally
      */
     private static class IndexHolder {
         //can replace unsafe usage when VarHandles support operations on numeric types without boxing/unboxing
@@ -143,7 +145,7 @@ public class ExtensionHolder {
 
         this.inheritanceRoot = parent.inheritanceId == 0 ? parent.id : parent.inheritanceRoot;
         this.inheritanceId = parent.inheritanceId + 1;
-        this.keysRequested = new AtomicInteger();
+        this.keysRequested = parent.keysRequested;
 
         this.indices = parent.indices;
     }
@@ -209,7 +211,7 @@ public class ExtensionHolder {
         });
 
         if (newValue == 65536) {
-            throw new IllegalStateException("Too many keys have been requested from this holder!");
+            throw new IllegalStateException("Too many keys have been requested from this holder and/or derivations!");
         }
 
         return new Key<>(type, indices.getAndIncrementIndex(this.inheritanceId), id, this.inheritanceRoot,
