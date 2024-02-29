@@ -166,4 +166,63 @@ class ExtensionHolderTest {
         assertEquals("rootKey", mobKey.get(rootKey));
         assertEquals(0, mobKey.get(rootDerivationKey));
     }
+
+    @Test
+    void derivationConsistency3() {
+        ExtensionHolder mobRoot = new ExtensionHolder();
+
+        var globalStringKey = mobRoot.requestKey(String.class);
+        var globalIntegerKey = mobRoot.requestKey(Integer.class);
+
+        ExtensionHolder mobTypeRoot = mobRoot.derive();
+        ExtensionHolder mobTypeRoot1 = mobRoot.derive();
+
+        var mobTypeRootKey = mobTypeRoot.requestKey(Boolean.class);
+        var mobTypeRootKey1 = mobTypeRoot.requestKey(Float.class);
+
+        var mobTypeRootKey_1 = mobTypeRoot1.requestKey(Boolean.class);
+        var mobTypeRootKey1_1 = mobTypeRoot1.requestKey(Float.class);
+
+        ExtensionHolder mobHolder1 = mobTypeRoot.derive();
+        ExtensionHolder mobHolder2 = mobTypeRoot1.derive();
+
+        mobHolder1.set(globalStringKey, "global value for mob 1");
+        mobHolder1.set(globalIntegerKey, 69);
+
+        mobHolder1.set(mobTypeRootKey, true);
+        mobHolder1.set(mobTypeRootKey1, 0.69F);
+
+        mobHolder1.set(mobTypeRootKey_1, true);
+        mobHolder1.set(mobTypeRootKey1_1, 0.420F);
+
+        mobHolder2.set(globalStringKey, "global value for mob 2");
+        mobHolder2.set(globalIntegerKey, 69);
+
+        mobHolder2.set(mobTypeRootKey, true);
+        mobHolder2.set(mobTypeRootKey1, 0.69F);
+
+        mobHolder2.set(mobTypeRootKey_1, true);
+        mobHolder2.set(mobTypeRootKey1_1, 0.420F);
+
+        mobHolder1.trimToSize();
+        mobHolder2.trimToSize();
+
+        assertEquals("global value for mob 1", mobHolder1.get(globalStringKey));
+        assertEquals(69, mobHolder1.get(globalIntegerKey));
+
+        assertEquals(true, mobHolder1.get(mobTypeRootKey));
+        assertEquals(0.69F, mobHolder1.get(mobTypeRootKey1));
+
+        assertEquals(true, mobHolder1.get(mobTypeRootKey_1));
+        assertEquals(0.420F, mobHolder1.get(mobTypeRootKey1_1));
+
+        assertEquals("global value for mob 2", mobHolder2.get(globalStringKey));
+        assertEquals(69, mobHolder2.get(globalIntegerKey));
+
+        assertEquals(true, mobHolder2.get(mobTypeRootKey));
+        assertEquals(0.69F, mobHolder2.get(mobTypeRootKey1));
+
+        assertEquals(true, mobHolder2.get(mobTypeRootKey_1));
+        assertEquals(0.420F, mobHolder2.get(mobTypeRootKey1_1));
+    }
 }

@@ -1,122 +1,77 @@
 package org.phantazm.commons;
 
 import org.jetbrains.annotations.NotNull;
+import sun.misc.Unsafe;
 
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
+import java.lang.reflect.Field;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
 
-/**
- * A thread-safe container of "extension objects", which can be accessed using corresponding
- * {@link ExtensionHolder.Key}s. It is intended for use as an arbitrary container of data, to be associated with another
- * object, and optimized for concurrent reads and writes. Especially for small data sets, it should be significantly
- * faster and more memory efficient than an equivalent {@link ConcurrentHashMap}, and encounter fewer cases of lock
- * contention.
- */
 public class ExtensionHolder {
     private static final AtomicInteger HOLDER_ID = new AtomicInteger();
     private static final int MINIMUM_SIZE = 10;
-    private static final long HOLDER_ID_MASK = 0x0000_0000_FFFF_FFFFL;
 
-    /**
-     * A key, used to access an extension object. Instances can be obtained from
-     * {@link ExtensionHolder#requestKey(Class)}.
-     * <p>
-     * Keys can only be used to retrieve or set values for the ExtensionHolder to which they belong.
-     *
-     * @param <T> the type of object to be accessed
+    /*
+    atomic operations on 'high' and 'low' long values (for combined 128 bits), grouped into 16-bit chunks
      */
-    public static class Key<T> {
-        private final Class<T> type;
-        private final int localIndex;
-        private final AtomicInteger inheritedIndex;
-        private final int holderId;
-        private final long inheritance;
+    private static class IndexHolder {
+        //can replace unsafe usage when VarHandles support operations on numeric types without boxing/unboxing
+        private static final Unsafe U;
 
-        private final AtomicInteger actualInheritedIndex = new AtomicInteger(-1);
+        private static final long IH;
+        private static final long IL;
 
-        private Key(Class<T> type, int localIndex, AtomicInteger inheritedIndex, int holderId, long inheritance) {
-            this.type = type;
-            this.localIndex = localIndex;
-            this.inheritedIndex = inheritedIndex;
-            this.holderId = holderId;
-            this.inheritance = inheritance;
+        private static final long[] OFFSETS;
+        private static final long FULL_DELTA = 0x0001_0001_0001_0001L;
+        private static final long INDEX_MASK = 0xFFFF;
+        private static final long FULL_MASK = 0xFFFF_FFFF_FFFF_FFFFL;
+
+        static {
+            try {
+                Field unsafeField = Unsafe.class.getDeclaredField("theUnsafe");
+                unsafeField.setAccessible(true);
+
+                U = (Unsafe) unsafeField.get(null);
+                IH = U.objectFieldOffset(IndexHolder.class.getDeclaredField("indexHigh"));
+                IL = U.objectFieldOffset(IndexHolder.class.getDeclaredField("indexLow"));
+
+                OFFSETS = new long[]{IL, IH};
+            } catch (NoSuchFieldException | IllegalAccessException e) {
+                throw new ExceptionInInitializerError(e);
+            }
         }
 
-        private int getIndex(int id) {
-            if (id == holderId || inheritedIndex == null) {
-                return localIndex;
+        private volatile long indexHigh;
+        private volatile long indexLow;
+
+        private static long delta(int inheritanceMod) {
+            return (FULL_MASK << (inheritanceMod << 4)) & FULL_DELTA;
+        }
+
+        /*
+        simultaneously increments index for all derived holders too
+         */
+        private int getAndIncrementIndex(int inheritanceId) {
+            int mod = inheritanceId & 3;
+            if (inheritanceId > 3) {
+                long old = U.getAndAddLong(this, IH, delta(mod));
+                return (int) ((old >>> (mod << 4)) & INDEX_MASK);
             }
 
-            if (actualInheritedIndex.compareAndSet(-1, -2)) {
-                actualInheritedIndex.set(inheritedIndex.getAndIncrement());
-            }
+            U.getAndAddLong(this, IH, FULL_DELTA);
+            VarHandle.fullFence();
+            long old = U.getAndAddLong(this, IL, delta(mod));
+            return (int) ((old >>> (mod << 4)) & INDEX_MASK);
+        }
 
-            int value;
-            do {
-                value = actualInheritedIndex.get();
-            }
-            while (value < 0);
-
-            return value;
+        private int getIndex(int inheritanceId) {
+            return (int) ((U.getLong(this, OFFSETS[inheritanceId >>> 2]) >>> ((inheritanceId & 3) << 4)) & INDEX_MASK);
         }
     }
 
-    private final Object sync = new Object();
-
-    private final AtomicInteger localIndex;
-    private final AtomicInteger inheritedIndex;
-    private final int id;
-
-    /*
-    upper 32 bits are inheritance ID; lower 32 are the holder ID of the root extension holder
-    inheritance ID starts at 0 and increments by 1 for every successive "subclass" holder
-     */
-    private final long inheritance;
-
-    private volatile int resizeGuard;
-
-    private volatile Object[] localArray;
-    private volatile Object[] inheritedArray;
-
-    /**
-     * Creates a new instance of this class. This does not initialize the internal array; that will be done later if
-     * needed. Therefore, it is generally cheap to create many instances of this class.
-     */
-    public ExtensionHolder() {
-        this.localIndex = new AtomicInteger();
-        this.inheritedIndex = null;
-        this.id = HOLDER_ID.getAndIncrement();
-
-        this.inheritance = ((long) this.id) & HOLDER_ID_MASK;
-
-        this.resizeGuard = 0;
-    }
-
-    /*
-    this isn't actually a copy constructor
-     */
-    @SuppressWarnings("CopyConstructorMissesField")
-    private ExtensionHolder(ExtensionHolder parent) {
-        this.inheritedIndex = parent.inheritedIndex == null ? parent.localIndex : parent.inheritedIndex;
-        this.localIndex = new AtomicInteger();
-        this.id = HOLDER_ID.getAndIncrement();
-
-        this.resizeGuard = 0;
-
-        //zero if parent is the root of this inheritance
-        int parentInheritanceId = inheritanceId(parent.inheritance);
-
-        this.inheritance = ((long) (parentInheritanceId + 1) << 32) |
-            ((long) (parentInheritanceId == 0 ? parent.id : inheritanceRoot(parent.inheritance))) & HOLDER_ID_MASK;
-    }
-
-    /*
-    static utils for volatile operations on arrays
-     */
     private static class VolatileArray {
         private static final VarHandle AA = MethodHandles.arrayElementVarHandle(Object[].class);
 
@@ -138,28 +93,71 @@ public class ExtensionHolder {
         }
     }
 
-    private static int inheritanceId(long inheritance) {
-        return (int) (inheritance >> 32);
-    }
+    public static class Key<T> {
+        private final Class<T> type;
+        private final int index;
 
-    private static int inheritanceRoot(long inheritance) {
-        return (int) (HOLDER_ID_MASK & inheritance);
-    }
+        private final int holderId;
+        private final int inheritanceRoot;
+        private final int inheritanceId;
 
-    /*
-    Superclass-constructed keys are valid for subclasses, but not vice-versa
-     */
-    private void validateKey(Key<?> key) {
-        //key must have the same inheritance root as this instance
-        //smaller inheritance ID = superclass
-        if (key.holderId != id && (inheritanceRoot(key.inheritance) != inheritanceRoot(this.inheritance) ||
-            inheritanceId(key.inheritance) > inheritanceId(this.inheritance))) {
-            throwKeyValidationIEE();
+        private Key(Class<T> type, int index, int holderId, int inheritanceRoot, int inheritanceId) {
+            this.type = type;
+            this.index = index;
+            this.holderId = holderId;
+            this.inheritanceRoot = inheritanceRoot;
+            this.inheritanceId = inheritanceId;
         }
+    }
+
+    private final int id;
+    private final int inheritanceRoot;
+    private final int inheritanceId;
+    private final AtomicInteger keysRequested;
+
+    private final Object sync = new Object();
+
+    //instance shared among all derivations
+    private final IndexHolder indices;
+
+    private volatile Object[] array;
+    private volatile int resizeGuard;
+
+    /**
+     * Creates a new instance of this class. This does not initialize the internal array; that will be done later if
+     * needed. Therefore, it is generally cheap to create many instances of this class.
+     */
+    public ExtensionHolder() {
+        this.id = HOLDER_ID.getAndIncrement();
+
+        this.inheritanceRoot = this.id;
+        this.inheritanceId = 0;
+        this.keysRequested = new AtomicInteger();
+
+        this.indices = new IndexHolder();
+    }
+
+    @SuppressWarnings("CopyConstructorMissesField")
+    private ExtensionHolder(ExtensionHolder parent) {
+        this.id = HOLDER_ID.getAndIncrement();
+
+        this.inheritanceRoot = parent.inheritanceId == 0 ? parent.id : parent.inheritanceRoot;
+        this.inheritanceId = parent.inheritanceId + 1;
+        this.keysRequested = new AtomicInteger();
+
+        this.indices = parent.indices;
     }
 
     private void throwKeyValidationIEE() {
         throw new IllegalArgumentException("Key is not valid for this ExtensionHolder");
+    }
+
+    private void validateKey(Key<?> key) {
+        //key must have the same inheritance root as this instance
+        //smaller inheritance ID = superclass
+        if (key.holderId != id && (key.inheritanceRoot != this.inheritanceRoot || key.inheritanceId > this.inheritanceId)) {
+            throwKeyValidationIEE();
+        }
     }
 
     private void validateKeyAndObject(Key<?> key, Object object) {
@@ -171,44 +169,30 @@ public class ExtensionHolder {
         }
     }
 
-    private Object[] getArray(Key<?> key) {
-        return key.holderId != id ? inheritedArray : localArray;
+    private static int computeRequiredSize(int index) {
+        int requiredSize = index + 1;
+        return requiredSize + (requiredSize >> 1);
     }
 
-    private void setArray(Key<?> key, Object[] newValue) {
-        if (key.holderId != id) {
-            this.inheritedArray = newValue;
-        } else {
-            this.localArray = newValue;
-        }
-    }
-
-    private void createNewArrayForKey(Key<?> key, int index, Object object) {
+    private void createNewArrayForIndex(int index, Object object) {
         Object[] newArray = new Object[Math.max(computeRequiredSize(index), MINIMUM_SIZE)];
         newArray[index] = object;
 
-        setArray(key, newArray);
+        this.array = newArray;
     }
 
-    //only to be called when sync is held
     @SuppressWarnings("NonAtomicOperationOnVolatileField")
-    private void resizeArrayForKey(Key<?> key, int index, Object[] array, Object object) {
+    private void resizeArrayForIndex(int index, Object[] array, Object object) {
         Object[] arrayCopy = new Object[computeRequiredSize(index)];
 
         resizeGuard++;
         try {
             System.arraycopy(array, 0, arrayCopy, 0, array.length);
             arrayCopy[index] = object;
-
-            setArray(key, arrayCopy);
+            this.array = arrayCopy;
         } finally {
             resizeGuard++;
         }
-    }
-
-    private static int computeRequiredSize(int index) {
-        int requiredSize = index + 1;
-        return requiredSize + (requiredSize >> 1);
     }
 
     /**
@@ -220,17 +204,30 @@ public class ExtensionHolder {
      * @return a new key
      */
     public <T> @NotNull Key<T> requestKey(@NotNull Class<T> type) {
-        return new Key<>(Objects.requireNonNull(type), this.localIndex.getAndIncrement(), inheritedIndex, id,
-            inheritance);
+        int newValue = keysRequested.updateAndGet(current -> {
+            return Math.min(current + 1, 65536);
+        });
+
+        if (newValue == 65536) {
+            throw new IllegalStateException("Too many keys have been requested from this holder!");
+        }
+
+        return new Key<>(type, indices.getAndIncrementIndex(this.inheritanceId), id, this.inheritanceRoot,
+            this.inheritanceId);
     }
 
     /**
      * Creates a new {@link ExtensionHolder} derived from this one. The child ExtensionHolder can use keys requested
-     * from the parent, but the parent will be unable to use keys requested from the child.
+     * from the parent, but the parent will be unable to use keys requested from the child. No data is copied over; the
+     * child holder will be initially empty.
      *
      * @return the derived holder
      */
     public @NotNull ExtensionHolder derive() {
+        if (this.inheritanceId >= 7) {
+            throw new IllegalStateException("Cannot derive further from this ExtensionHolder");
+        }
+
         return new ExtensionHolder(this);
     }
 
@@ -245,8 +242,8 @@ public class ExtensionHolder {
     public <T> T get(@NotNull Key<T> key) {
         validateKey(key);
 
-        Object[] array = getArray(key);
-        int index = key.getIndex(id);
+        Object[] array = this.array;
+        int index = key.index;
 
         if (array == null || index >= array.length) {
             return null;
@@ -256,8 +253,8 @@ public class ExtensionHolder {
     }
 
     /**
-     * Works identically to {@link ExtensionHolder#get(Key)}, but uses the provided {@link Supplier} to generate and
-     * return a default value if no extension object has been set for the given key.
+     * Works identically to {@link ExtensionHolder#get(ExtensionHolder.Key)}, but uses the provided {@link Supplier} to
+     * generate and return a default value if no extension object has been set for the given key.
      *
      * @param key             the key
      * @param defaultSupplier the default value supplier
@@ -267,8 +264,8 @@ public class ExtensionHolder {
     public <T> T getOrDefault(@NotNull Key<T> key, @NotNull Supplier<? extends T> defaultSupplier) {
         validateKey(key);
 
-        Object[] array = getArray(key);
-        int index = key.getIndex(id);
+        Object[] array = this.array;
+        int index = key.index;
 
         if (array == null || index >= array.length) {
             return defaultSupplier.get();
@@ -280,65 +277,6 @@ public class ExtensionHolder {
         }
 
         return key.type.cast(object);
-    }
-
-    /**
-     * Atomically sets the value at the given key, if it is absent. Returns {@code true} if the value was successfully
-     * set.
-     *
-     * @param key    the key
-     * @param object the value to set
-     * @param <T>    the object type
-     * @return true if the value was set (previously absent), false otherwise
-     */
-    public <T> boolean setIfAbsent(@NotNull Key<T> key, @NotNull T object) {
-        validateKeyAndObject(key, object);
-
-        Object[] array = getArray(key);
-        int index = key.getIndex(id);
-
-        if (array != null && index < array.length) {
-            int stamp = resizeGuard;
-            if ((stamp & 1) == 0) {
-                boolean casSucceeded = VolatileArray.compareAndSet(array, index, null, object);
-
-                //if we failed the CAS, it doesn't matter that we got blocked by an array resize
-                //if the CAS succeeded, and we were interrupted by a resize, we have to synchronize
-                if (!casSucceeded || resizeGuard == stamp) {
-                    return casSucceeded;
-                }
-
-                //casSucceeded && resizeGuard != stamp
-                synchronized (sync) {
-                    array = getArray(key);
-
-                    if (index < array.length) {
-                        //make sure the value actually got set
-                        VolatileArray.compareAndSet(array, index, null, object);
-                        return true;
-                    }
-
-                    resizeArrayForKey(key, index, array, object);
-                    return true;
-                }
-            }
-        }
-
-        synchronized (sync) {
-            array = getArray(key);
-
-            if (array == null) {
-                createNewArrayForKey(key, index, object);
-                return true;
-            }
-
-            if (index < array.length) {
-                return VolatileArray.compareAndSet(array, index, null, object);
-            }
-
-            resizeArrayForKey(key, index, array, object);
-            return true;
-        }
     }
 
     /**
@@ -355,8 +293,8 @@ public class ExtensionHolder {
     public <T> T set(@NotNull Key<T> key, @NotNull T object) {
         validateKeyAndObject(key, object);
 
-        Object[] array = getArray(key);
-        int index = key.getIndex(id);
+        Object[] array = this.array;
+        int index = key.index;
 
         boolean hasSavedOldValue = false;
         Object savedOldValue = null;
@@ -381,11 +319,11 @@ public class ExtensionHolder {
         }
 
         synchronized (sync) {
-            array = getArray(key);
+            array = this.array;
 
             //array needs to be created
             if (array == null) {
-                createNewArrayForKey(key, index, object);
+                createNewArrayForIndex(index, object);
                 return null;
             }
 
@@ -401,33 +339,85 @@ public class ExtensionHolder {
                 return key.type.cast(VolatileArray.getAndSet(array, index, object));
             }
 
-            resizeArrayForKey(key, index, array, object);
+            resizeArrayForIndex(index, array, object);
             return null;
         }
     }
 
+
     /**
-     * Trims any internal arrays to size.
+     * Atomically sets the value at the given key, if it is absent. Returns {@code true} if the value was successfully
+     * set.
+     *
+     * @param key    the key
+     * @param object the value to set
+     * @param <T>    the object type
+     * @return true if the value was set (previously absent), false otherwise
+     */
+    public <T> boolean setIfAbsent(@NotNull Key<T> key, @NotNull T object) {
+        validateKeyAndObject(key, object);
+
+        Object[] array = this.array;
+        int index = key.index;
+
+        if (array != null && index < array.length) {
+            int stamp = resizeGuard;
+            if ((stamp & 1) == 0) {
+                boolean casSucceeded = VolatileArray.compareAndSet(array, index, null, object);
+
+                //if we failed the CAS, it doesn't matter that we got blocked by an array resize
+                //if the CAS succeeded, and we were interrupted by a resize, we have to synchronize
+                if (!casSucceeded || resizeGuard == stamp) {
+                    return casSucceeded;
+                }
+
+                //casSucceeded && resizeGuard != stamp
+                synchronized (sync) {
+                    array = this.array;
+
+                    if (index < array.length) {
+                        //make sure the value actually got set
+                        VolatileArray.compareAndSet(array, index, null, object);
+                        return true;
+                    }
+
+                    resizeArrayForIndex(index, array, object);
+                    return true;
+                }
+            }
+        }
+
+        synchronized (sync) {
+            array = this.array;
+
+            if (array == null) {
+                createNewArrayForIndex(index, object);
+                return true;
+            }
+
+            if (index < array.length) {
+                return VolatileArray.compareAndSet(array, index, null, object);
+            }
+
+            resizeArrayForIndex(index, array, object);
+            return true;
+        }
+    }
+
+    /**
+     * Trims the internal array to size.
      */
     public void trimToSize() {
         synchronized (sync) {
-            Object[] localArray = this.localArray;
-            Object[] inheritedArray = this.inheritedArray;
+            Object[] array = this.array;
 
             resizeGuard++;
             try {
-                int localIndex = this.localIndex.get();
-                if (localArray != null && localArray.length > localIndex) {
+                int localIndex = this.indices.getIndex(this.inheritanceId);
+                if (array != null && array.length > localIndex) {
                     Object[] copy = new Object[localIndex];
-                    System.arraycopy(localArray, 0, copy, 0, localIndex);
-                    this.localArray = copy;
-                }
-
-                int inheritedIndex;
-                if (inheritedArray != null && inheritedArray.length > (inheritedIndex = this.inheritedIndex.get())) {
-                    Object[] copy = new Object[inheritedIndex];
-                    System.arraycopy(inheritedArray, 0, copy, 0, inheritedIndex);
-                    this.inheritedArray = copy;
+                    System.arraycopy(array, 0, copy, 0, localIndex);
+                    this.array = copy;
                 }
             } finally {
                 resizeGuard++;
