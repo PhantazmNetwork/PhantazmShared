@@ -98,7 +98,6 @@ public class ExtensionHolder {
             }
 
             U.getAndAddLong(this, IH, FULL_DELTA);
-            VarHandle.fullFence();
             long old = U.getAndAddLong(this, IL, delta(mod));
             return (int) ((old >>> (mod << 4)) & INDEX_MASK);
         }
@@ -181,7 +180,6 @@ public class ExtensionHolder {
 
     private ExtensionHolder(ExtensionHolder other, boolean isParent, boolean copyValues) {
         this.id = HOLDER_ID.getAndIncrement();
-
         if (copyValues) {
             Object[] otherArray = other.array;
             if (otherArray != null) {
@@ -200,19 +198,11 @@ public class ExtensionHolder {
             return;
         }
 
-        if (other.inheritanceRoot == other.id) {
-            //our sibling has no parent, so we shouldn't either
-            this.inheritanceRoot = this.id;
-            this.inheritanceId = 0;
-            this.keysRequested = new AtomicInteger();
-            this.indices = new IndexHolder();
-        } else {
-            //otherwise, we share inheritance information with our sibling
-            this.inheritanceRoot = other.inheritanceRoot;
-            this.inheritanceId = other.inheritanceId;
-            this.keysRequested = other.keysRequested;
-            this.indices = other.indices;
-        }
+        //otherwise, we share inheritance information with our sibling
+        this.inheritanceRoot = other.inheritanceRoot;
+        this.inheritanceId = other.inheritanceId;
+        this.keysRequested = other.keysRequested;
+        this.indices = other.indices;
     }
 
     private void throwKeyValidationIEE() {
@@ -311,7 +301,9 @@ public class ExtensionHolder {
 
     /**
      * Creates a new {@link ExtensionHolder} that is a "sibling" of this one. That is, the created holder will share the
-     * same parent as its sibling. All keys valid for one sibling are valid for other siblings.
+     * same parent as its sibling. All keys valid for one holder are valid for its siblings, and vice-versa. However, if
+     * this holder does not have a parent (i.e. it is the root of its hierarchy), attempting to create a sibling will
+     * result in an {@link IllegalArgumentException}.
      * <p>
      * Since siblings do not increase the derivation depth, this method can be called any number of times. However,
      * siblings (as well as any derivations of siblings, and their parents) will share the key request limit of
@@ -324,6 +316,10 @@ public class ExtensionHolder {
      * @return a new sibling ExtensionHolder
      */
     public @NotNull ExtensionHolder sibling(boolean copyValues) {
+        if (this.inheritanceRoot == this.id) {
+            throw new IllegalArgumentException("Cannot create a sibling for a root holder");
+        }
+
         return new ExtensionHolder(this, false, copyValues);
     }
 
