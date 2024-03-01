@@ -8,6 +8,7 @@ import java.lang.invoke.VarHandle;
 import java.lang.reflect.Field;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Supplier;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -156,7 +157,7 @@ public class ExtensionHolder {
     private final int inheritanceId;
     private final AtomicInteger keysRequested;
 
-    private final Object sync = new Object();
+    private final ReentrantLock lock;
 
     //instance shared among all derivations
     private final IndexHolder indices;
@@ -174,12 +175,15 @@ public class ExtensionHolder {
         this.inheritanceRoot = this.id;
         this.inheritanceId = 0;
         this.keysRequested = new AtomicInteger();
+        this.lock = new ReentrantLock();
 
         this.indices = new IndexHolder();
     }
 
     private ExtensionHolder(ExtensionHolder other, boolean isParent, boolean copyValues) {
         this.id = HOLDER_ID.getAndIncrement();
+        this.lock = new ReentrantLock();
+
         if (copyValues) {
             Object[] otherArray = other.array;
             if (otherArray != null) {
@@ -410,7 +414,8 @@ public class ExtensionHolder {
             }
         }
 
-        synchronized (sync) {
+        lock.lock();
+        try {
             array = this.array;
 
             //array needs to be created
@@ -433,6 +438,8 @@ public class ExtensionHolder {
 
             resizeArrayForIndex(index, array, object);
             return null;
+        } finally {
+            lock.unlock();
         }
     }
 
@@ -464,7 +471,8 @@ public class ExtensionHolder {
                 }
 
                 //casSucceeded && resizeGuard != stamp
-                synchronized (sync) {
+                lock.lock();
+                try {
                     array = this.array;
 
                     if (index < array.length) {
@@ -475,11 +483,14 @@ public class ExtensionHolder {
 
                     resizeArrayForIndex(index, array, object);
                     return true;
+                } finally {
+                    lock.unlock();
                 }
             }
         }
 
-        synchronized (sync) {
+        lock.lock();
+        try {
             array = this.array;
 
             if (array == null) {
@@ -493,14 +504,18 @@ public class ExtensionHolder {
 
             resizeArrayForIndex(index, array, object);
             return true;
+        } finally {
+            lock.unlock();
         }
     }
 
     /**
      * Trims the internal array to size.
      */
+    @SuppressWarnings("NonAtomicOperationOnVolatileField")
     public void trimToSize() {
-        synchronized (sync) {
+        lock.lock();
+        try {
             Object[] array = this.array;
 
             resizeGuard++;
@@ -514,6 +529,8 @@ public class ExtensionHolder {
             } finally {
                 resizeGuard++;
             }
+        } finally {
+            lock.unlock();
         }
     }
 }
