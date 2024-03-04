@@ -193,20 +193,18 @@ public class ExtensionHolder {
             }
         }
 
+        this.keysRequested = other.keysRequested;
+        this.indices = other.indices;
+
         if (isParent) {
             this.inheritanceRoot = other.inheritanceId == 0 ? other.id : other.inheritanceRoot;
             this.inheritanceId = other.inheritanceId + 1;
-            this.keysRequested = other.keysRequested;
-
-            this.indices = other.indices;
             return;
         }
 
         //otherwise, we share inheritance information with our sibling
         this.inheritanceRoot = other.inheritanceRoot;
         this.inheritanceId = other.inheritanceId;
-        this.keysRequested = other.keysRequested;
-        this.indices = other.indices;
     }
 
     private void throwKeyValidationIEE() {
