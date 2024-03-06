@@ -41,7 +41,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * That is, a value that is set on a holder will not become visible to a sibling or derivation, and vice-versa.
  * <p>
  * There are hard limits to both key requests and the number of "nested derivations" (i.e. derivations of derivations).
- * Derivation chains may only go 7 levels deep, 8 if the initial parentless holder is considered. Additionally, for each
+ * Derivation chains may only go 7 levels deep, 8 if the initial orphan holder is considered. Additionally, for each
  * "family tree" of holders, it is not possible to request more than 65536 keys. Attempting to exceed either of this
  * limits will result in an {@link IllegalStateException} being thrown in the appropriate method call.
  */
@@ -58,8 +58,8 @@ public class ExtensionHolder {
         //can replace unsafe usage when VarHandles support operations on numeric types without boxing/unboxing
         private static final Unsafe U;
 
-        private static final long IH;
-        private static final long IL;
+        private static final long INDEX_HIGH;
+        private static final long INDEX_LOW;
 
         private static final long[] OFFSETS;
         private static final long FULL_DELTA = 0x0001_0001_0001_0001L;
@@ -72,16 +72,19 @@ public class ExtensionHolder {
                 unsafeField.setAccessible(true);
 
                 U = (Unsafe) unsafeField.get(null);
-                IH = U.objectFieldOffset(IndexHolder.class.getDeclaredField("indexHigh"));
-                IL = U.objectFieldOffset(IndexHolder.class.getDeclaredField("indexLow"));
+                INDEX_HIGH = U.objectFieldOffset(IndexHolder.class.getDeclaredField("indexHigh"));
+                INDEX_LOW = U.objectFieldOffset(IndexHolder.class.getDeclaredField("indexLow"));
 
-                OFFSETS = new long[]{IL, IH};
+                OFFSETS = new long[]{INDEX_LOW, INDEX_HIGH};
             } catch (NoSuchFieldException | IllegalAccessException e) {
                 throw new ExceptionInInitializerError(e);
             }
         }
 
+        @SuppressWarnings("unused")
         private volatile long indexHigh;
+
+        @SuppressWarnings("unused")
         private volatile long indexLow;
 
         private static long delta(int inheritanceMod) {
@@ -94,12 +97,12 @@ public class ExtensionHolder {
         private int getAndIncrementIndex(int inheritanceId) {
             int mod = inheritanceId & 3;
             if (inheritanceId > 3) {
-                long old = U.getAndAddLong(this, IH, delta(mod));
+                long old = U.getAndAddLong(this, INDEX_HIGH, delta(mod));
                 return (int) ((old >>> (mod << 4)) & INDEX_MASK);
             }
 
-            U.getAndAddLong(this, IH, FULL_DELTA);
-            long old = U.getAndAddLong(this, IL, delta(mod));
+            U.getAndAddLong(this, INDEX_HIGH, FULL_DELTA);
+            long old = U.getAndAddLong(this, INDEX_LOW, delta(mod));
             return (int) ((old >>> (mod << 4)) & INDEX_MASK);
         }
 
