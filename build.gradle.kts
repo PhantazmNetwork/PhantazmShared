@@ -45,8 +45,8 @@ repositories {
 }
 
 dependencies {
-    implementation("com.github.steanky:element-core:0.16.0")
-    implementation("com.github.steanky:ethylene-core:0.23.0")
+    implementation("com.github.steanky:element-core:0.18.2")
+    implementation("com.github.steanky:ethylene-core:0.26.0")
     implementation("com.github.steanky:ethylene-mapper:0.23.0")
     implementation("com.github.steanky:vector-core:0.9.2")
     implementation("com.github.steanky:toolkit-collection:0.4.0")

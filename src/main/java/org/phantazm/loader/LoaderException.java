@@ -1,20 +1,24 @@
 package org.phantazm.loader;
 
-import com.github.steanky.element.core.path.ElementPath;
 import com.github.steanky.ethylene.core.ConfigElement;
+import com.github.steanky.ethylene.core.path.ConfigPath;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
+import java.io.Serial;
 
 public class LoaderException extends IOException {
+    @Serial
+    private static final long serialVersionUID = 3716442204068749622L;
+
     private final DataLocation location;
     private final ConfigElement element;
-    private final ElementPath elementPath;
+    private final ConfigPath elementPath;
     private final String stage;
 
     private LoaderException(String message, Throwable cause, DataLocation location, ConfigElement element,
-        ElementPath elementPath, String stage) {
+        ConfigPath elementPath, String stage) {
         super(message, cause);
         this.location = location;
         this.element = element;
@@ -74,7 +78,7 @@ public class LoaderException extends IOException {
     public static class Builder {
         private DataLocation location;
         private ConfigElement element;
-        private ElementPath elementPath;
+        private ConfigPath elementPath;
         private String message;
         private String stage;
         private Throwable cause;
@@ -96,7 +100,7 @@ public class LoaderException extends IOException {
             return this;
         }
 
-        public @NotNull Builder withElementPath(@Nullable ElementPath path) {
+        public @NotNull Builder withElementPath(@Nullable ConfigPath path) {
             this.elementPath = path;
             return this;
         }
