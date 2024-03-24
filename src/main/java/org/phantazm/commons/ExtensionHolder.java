@@ -95,15 +95,17 @@ public class ExtensionHolder {
         simultaneously increments index for all derived holders too
          */
         private int getAndIncrementIndex(int inheritanceId) {
-            int mod = inheritanceId & 3;
-            if (inheritanceId > 3) {
-                long old = U.getAndAddLong(this, INDEX_HIGH, delta(mod));
+            synchronized (this) {
+                int mod = inheritanceId & 3;
+                if (inheritanceId > 3) {
+                    long old = U.getAndAddLong(this, INDEX_HIGH, delta(mod));
+                    return (int) ((old >>> (mod << 4)) & INDEX_MASK);
+                }
+
+                U.getAndAddLong(this, INDEX_HIGH, FULL_DELTA);
+                long old = U.getAndAddLong(this, INDEX_LOW, delta(mod));
                 return (int) ((old >>> (mod << 4)) & INDEX_MASK);
             }
-
-            U.getAndAddLong(this, INDEX_HIGH, FULL_DELTA);
-            long old = U.getAndAddLong(this, INDEX_LOW, delta(mod));
-            return (int) ((old >>> (mod << 4)) & INDEX_MASK);
         }
 
         private int getIndex(int inheritanceId) {
