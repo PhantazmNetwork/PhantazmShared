@@ -8,7 +8,7 @@ import org.jetbrains.annotations.Nullable;
 import java.io.IOException;
 import java.io.Serial;
 
-public class LoaderException extends IOException {
+public class CringeOverloadException extends IOException {
     @Serial
     private static final long serialVersionUID = 3716442204068749622L;
 
@@ -17,7 +17,7 @@ public class LoaderException extends IOException {
     private final ConfigPath elementPath;
     private final String stage;
 
-    private LoaderException(String message, Throwable cause, DataLocation location, ConfigElement element,
+    private CringeOverloadException(String message, Throwable cause, DataLocation location, ConfigElement element,
         ConfigPath elementPath, String stage) {
         super(message, cause);
         this.location = location;
@@ -86,8 +86,8 @@ public class LoaderException extends IOException {
         private Builder() {
         }
 
-        public @NotNull LoaderException build() {
-            return new LoaderException(message, cause, location, element, elementPath, stage);
+        public @NotNull CringeOverloadException build() {
+            return new CringeOverloadException(message, cause, location, element, elementPath, stage);
         }
 
         public @NotNull Builder withDataLocation(@Nullable DataLocation location) {

@@ -223,8 +223,8 @@ public interface DataSource extends Closeable {
             closed = true;
         }
 
-        protected void validateOpen() throws LoaderException {
-            if (closed) throw LoaderException.builder()
+        protected void validateOpen() throws CringeOverloadException {
+            if (closed) throw CringeOverloadException.builder()
                 .withMessage("this resource has been closed")
                 .build();
         }
@@ -243,11 +243,11 @@ public interface DataSource extends Closeable {
             this.codec = codec;
         }
 
-        protected ConfigElement load(Path path) throws LoaderException {
+        protected ConfigElement load(Path path) throws CringeOverloadException {
             try {
                 return Configuration.read(path, codec);
             } catch (IOException e) {
-                throw LoaderException.builder()
+                throw CringeOverloadException.builder()
                     .withCause(e)
                     .withMessage("failed to load data from file")
                     .withDataLocation(DataLocation.path(path))
@@ -509,7 +509,7 @@ public interface DataSource extends Closeable {
             this.symlink = symlink;
         }
 
-        private Iterator<Path> getIterator() throws LoaderException {
+        private Iterator<Path> getIterator() throws CringeOverloadException {
             if (iterator != null) {
                 return iterator;
             }
@@ -521,31 +521,31 @@ public interface DataSource extends Closeable {
             try {
                 return iterator = (stream = Files.walk(path, depth, symlink ? VISIT_SYMLINKS : NO_VISIT_SYMLINKS)).iterator();
             } catch (IOException e) {
-                throw LoaderException.builder()
+                throw CringeOverloadException.builder()
                     .withCause(e)
                     .withMessage("failed to initialize data stream")
                     .build();
             }
         }
 
-        private boolean hasNext0() throws LoaderException {
+        private boolean hasNext0() throws CringeOverloadException {
             Iterator<Path> itr = getIterator();
             try {
                 return itr.hasNext();
             } catch (UncheckedIOException e) {
-                throw LoaderException.builder()
+                throw CringeOverloadException.builder()
                     .withCause(e)
                     .withMessage("failed to access file")
                     .build();
             }
         }
 
-        private Path next0() throws LoaderException {
+        private Path next0() throws CringeOverloadException {
             Iterator<Path> itr = getIterator();
             try {
                 return itr.next();
             } catch (UncheckedIOException e) {
-                throw LoaderException.builder()
+                throw CringeOverloadException.builder()
                     .withCause(e)
                     .withMessage("failed to access file")
                     .build();
@@ -553,7 +553,7 @@ public interface DataSource extends Closeable {
         }
 
         @Override
-        public boolean hasNext() throws LoaderException {
+        public boolean hasNext() throws CringeOverloadException {
             validateOpen();
             if (cache != null) {
                 return true;
@@ -572,7 +572,7 @@ public interface DataSource extends Closeable {
         }
 
         @Override
-        public @NotNull ConfigElement next() throws LoaderException {
+        public @NotNull ConfigElement next() throws CringeOverloadException {
             validateOpen();
             Path cache = this.cache;
             if (cache != null) {

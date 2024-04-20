@@ -83,11 +83,11 @@ public interface Loader<T> {
                 try {
                     super.anonymousData = List.of(mergeFunction.apply(data));
                 } catch (IOException e) {
-                    if (e instanceof LoaderException loaderException) {
-                        throw loaderException.toBuilder().withStage(stage).build();
+                    if (e instanceof CringeOverloadException cringeOverloadException) {
+                        throw cringeOverloadException.toBuilder().withStage(stage).build();
                     }
 
-                    throw LoaderException.builder().withStage(stage).withCause(e).build();
+                    throw CringeOverloadException.builder().withStage(stage).withCause(e).build();
                 }
             }
         };
@@ -122,11 +122,11 @@ public interface Loader<T> {
                     this.data = newData;
                     this.anonymousData = newData.values();
                 } catch (IOException e) {
-                    if (e instanceof LoaderException loaderException) {
-                        throw loaderException.toBuilder().withStage(stage).build();
+                    if (e instanceof CringeOverloadException cringeOverloadException) {
+                        throw cringeOverloadException.toBuilder().withStage(stage).build();
                     }
 
-                    throw LoaderException.builder().withStage(stage).withCause(e).build();
+                    throw CringeOverloadException.builder().withStage(stage).withCause(e).build();
                 }
             }
         };
@@ -156,11 +156,11 @@ public interface Loader<T> {
                 try {
                     consumer.accept(Loader.this.anonymousData());
                 } catch (IOException e) {
-                    if (e instanceof LoaderException loaderException) {
-                        throw loaderException.toBuilder().withStage(stage).build();
+                    if (e instanceof CringeOverloadException cringeOverloadException) {
+                        throw cringeOverloadException.toBuilder().withStage(stage).build();
                     }
 
-                    throw LoaderException.builder().withStage(stage).withCause(e).build();
+                    throw CringeOverloadException.builder().withStage(stage).withCause(e).build();
                 }
             }
         };
@@ -240,11 +240,11 @@ public interface Loader<T> {
                         try {
                             entries = extract(location, extractor, element);
                         } catch (Exception exception) {
-                            if (exception instanceof LoaderException loaderException) {
-                                throw loaderException;
+                            if (exception instanceof CringeOverloadException cringeOverloadException) {
+                                throw cringeOverloadException;
                             }
 
-                            throw LoaderException.builder()
+                            throw CringeOverloadException.builder()
                                 .withElement(element)
                                 .withMessage("exception when loading data from configuration")
                                 .withDataLocation(location)
@@ -260,7 +260,7 @@ public interface Loader<T> {
 
                             Key identifier = entry.identifier();
                             if (identifier == null) {
-                                throw LoaderException.builder()
+                                throw CringeOverloadException.builder()
                                     .withElement(element)
                                     .withMessage("found anonymous entry for non-anonymous loader")
                                     .withDataLocation(location)
@@ -268,7 +268,7 @@ public interface Loader<T> {
                             }
 
                             if (map.putIfAbsent(identifier, entry.object()) != null) {
-                                throw LoaderException.builder()
+                                throw CringeOverloadException.builder()
                                     .withElement(element)
                                     .withMessage("duplicate key " + entry.identifier())
                                     .withDataLocation(location)
@@ -293,7 +293,7 @@ public interface Loader<T> {
             DataLocation dataLocation, ObjectExtractor<T, V> extractor, ConfigElement element) throws IOException {
             Class<V> type = extractor.allowedType();
             if (!type.isAssignableFrom(element.getClass())) {
-                throw LoaderException.builder()
+                throw CringeOverloadException.builder()
                     .withElement(element)
                     .withMessage("bad element type, expected " + type + " but was " + element.getClass())
                     .withDataLocation(dataLocation)
