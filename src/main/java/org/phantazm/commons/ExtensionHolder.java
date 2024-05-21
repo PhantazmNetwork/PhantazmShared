@@ -15,6 +15,7 @@ import java.util.function.Supplier;
  */
 public class ExtensionHolder {
     private static final AtomicLong GLOBAL_ID = new AtomicLong();
+    private static final Long2ObjectOpenHashMap<Object> EMPTY_MAP = new Long2ObjectOpenHashMap<>(0);
 
     /**
      * Represents a key to retrieve a typed value from an {@link ExtensionHolder}. Each ExtensionHolder is capable of
@@ -40,7 +41,7 @@ public class ExtensionHolder {
      */
     public ExtensionHolder() {
         this.lock = new ReentrantLock();
-        this.map = new Long2ObjectOpenHashMap<>(0);
+        this.map = EMPTY_MAP;
     }
 
     private ExtensionHolder(Long2ObjectOpenHashMap<Object> map) {
@@ -139,7 +140,7 @@ public class ExtensionHolder {
      */
     public @NotNull ExtensionHolder copy() {
         Long2ObjectOpenHashMap<Object> map = this.map;
-        return new ExtensionHolder(new Long2ObjectOpenHashMap<>(map));
+        return new ExtensionHolder(map);
     }
 
     /**
