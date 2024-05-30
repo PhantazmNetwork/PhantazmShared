@@ -5,6 +5,6 @@ import org.junit.jupiter.api.Test;
 class ParserTest {
     @Test
     void test() {
-        Parser.parse("a + b");
+        Parser.parse("------+-+-+-+-+-+-+-+-+-+-+-+-+-++-+-+-+x---+y/sin(x+----y/2^2)");
     }
 }

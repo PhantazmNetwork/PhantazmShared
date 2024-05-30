@@ -106,11 +106,11 @@ public final class Parser {
         throw new RuntimeException();
     }
 
-    private static int maybePush(Token token, int i, Deque<Token> stack) {
+    private static int maybePush(Token token, int i, Deque<Token> stack, String functionName) {
         IntObjectPair<String> body = group(token.raw, i);
 
         if (!body.right().isEmpty()) {
-            Token functionToken = new Token(TokenType.FUNCTION, body.right(), new ArrayList<>());
+            Token functionToken = new Token(TokenType.FUNCTION, body.right(), functionName, new ArrayList<>());
             token.children.add(functionToken);
             stack.push(functionToken);
 
@@ -152,7 +152,7 @@ public final class Parser {
                     } else if (isOperator) {
                         token.children.add(new Token(TokenType.OPERATOR, Character.toString(c), List.of()));
                     } else if (c == '(') {
-                        i = maybePush(token, i, stack);
+                        i = maybePush(token, i, stack, null);
                     } else if (c == ')') {
                         break;
                     } else {
@@ -217,7 +217,7 @@ public final class Parser {
                                 token.children.add(variableToken);
                             } else {
                                 // c == '('
-                                i = maybePush(token, i, stack);
+                                i = maybePush(token, i, stack, string);
                             }
 
                             if (isOperator) {
@@ -234,25 +234,86 @@ public final class Parser {
                 }
             }
 
-            for (int i = token.children.size() - 1; i >= 0; i--) {
-                Token current = token.children.get(i);
-                Token previous = i == 0 ? null : token.children.get(i - 1);
+            List<Token> simplified = simplify(token);
 
-                switch (current.type) {
-                    case NUMBER, FUNCTION, VARIABLE -> {
-                        if (previous != null && previous.type != TokenType.OPERATOR) {
-                            throw new RuntimeException();
-                        }
-                    }
-                    case OPERATOR -> {
-                        if (previous == null) {
-
-                        }
-                    }
-                }
-            }
+            token.children.clear();
+            token.children.addAll(simplified);
         }
 
+        System.out.println(root);
+    }
 
+
+    private static @NotNull List<Token> simplify(Token token) {
+        List<Token> simplified = new ArrayList<>(4);
+        for (int i = 0; i < token.children.size(); i++) {
+            Token current = token.children.get(i);
+
+            if (current.type == TokenType.OPERATOR) {
+                char firstOperator = current.raw.charAt(0);
+                boolean foundNonStackable = firstOperator == '*' || firstOperator == '/' || firstOperator == '^' || firstOperator == ',';
+
+                int minusCount = firstOperator == '-' ? 1 : 0;
+                boolean foundNonOperator = false;
+                int j;
+                for (j = i + 1; j < token.children.size(); j++) {
+                    Token other = token.children.get(j);
+                    if (other.type != TokenType.OPERATOR) {
+                        foundNonOperator = true;
+                        break;
+                    }
+
+                    if (foundNonStackable) {
+                        throw new RuntimeException();
+                    }
+
+                    char otherOperator = other.raw.charAt(0);
+                    switch (otherOperator) {
+                        case '-' -> minusCount++;
+                        case '*', '/', '^', ',' -> foundNonStackable = true;
+                    }
+                }
+
+                if (!foundNonOperator) {
+                    throw new RuntimeException();
+                }
+
+                if (foundNonStackable) {
+                    // can't lead with a non-stackable operator
+                    if (simplified.isEmpty()) {
+                        throw new RuntimeException();
+                    }
+
+                    simplified.add(new Token(TokenType.OPERATOR, Character.toString(firstOperator), List.of()));
+                } else {
+                    if (simplified.isEmpty()) {
+                        simplified.add(new Token(TokenType.NUMBER, "0", List.of()));
+                    }
+
+                    if ((minusCount & 2) == 0) {
+                        simplified.add(new Token(TokenType.OPERATOR, "+", List.of()));
+                    } else {
+
+                        simplified.add(new Token(TokenType.OPERATOR, "-", List.of()));
+                    }
+                }
+
+                i = j - 1;
+                continue;
+            }
+
+            if (simplified.isEmpty()) {
+                simplified.add(current);
+                continue;
+            }
+
+            Token last = simplified.get(simplified.size() - 1);
+            if (last.type != TokenType.OPERATOR) {
+                throw new RuntimeException();
+            }
+
+            simplified.add(current);
+        }
+        return simplified;
     }
 }
