@@ -3,10 +3,7 @@ package org.phantazm.commons.algebra;
 import it.unimi.dsi.fastutil.ints.IntObjectPair;
 import org.jetbrains.annotations.NotNull;
 
-import java.util.ArrayDeque;
-import java.util.ArrayList;
-import java.util.Deque;
-import java.util.List;
+import java.util.*;
 
 public final class Parser {
     private enum ParseState {
@@ -32,10 +29,6 @@ public final class Parser {
             List<Token> children) {
             this(type, raw, null, children);
         }
-    }
-
-    public final class Statement {
-
     }
 
     private static void validateParenthesis(String input) {
@@ -145,7 +138,7 @@ public final class Parser {
                         continue;
                     }
 
-                    if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_') {
+                    if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')) {
                         state = ParseState.STRING;
                     } else if (c >= '0' && c <= '9') {
                         state = ParseState.NUMBER;
@@ -160,76 +153,85 @@ public final class Parser {
                     }
                 }
 
-                switch (state) {
-                    case NUMBER -> {
-                        boolean validChar = (c >= '0' && c <= '9') || c == '.';
-                        if (validChar) {
-                            if (foundWhitespace) {
-                                throw new RuntimeException();
-                            }
+                boolean validNumberChar = (c >= '0' && c <= '9') || c == '.';
+                boolean validStringChar = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_';
 
-                            builder.append(c);
-                        } else if (isWhitespace) {
-                            foundWhitespace = true;
-                            continue;
-                        }
-
-                        if (isOperator || c == ')' || (i == token.raw.length() - 1)) {
-                            String numberString = builder.toString();
-                            Token number = new Token(TokenType.NUMBER, numberString, List.of());
-                            token.children.add(number);
-                            if (isOperator) {
-                                token.children.add(new Token(TokenType.OPERATOR, Character.toString(c), List.of()));
-                            }
-
-                            builder.setLength(0);
-                            foundWhitespace = false;
-                            state = ParseState.SEEK;
-                        } else if (isWhitespace) {
-                            foundWhitespace = true;
-                        } else if (!validChar) {
+                if (state == ParseState.NUMBER) {
+                    if (validNumberChar) {
+                        if (foundWhitespace) {
                             throw new RuntimeException();
                         }
+
+                        builder.append(c);
+                    } else if (isWhitespace) {
+                        foundWhitespace = true;
+                        continue;
                     }
-                    case STRING -> {
-                        boolean validChar = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_';
-                        if (validChar) {
-                            if (foundWhitespace) {
-                                throw new RuntimeException();
-                            }
 
-                            builder.append(c);
-                        } else if (isWhitespace) {
-                            foundWhitespace = true;
+                    boolean variableStart = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+                    if (variableStart || isOperator || c == ')' || (i == token.raw.length() - 1)) {
+                        String numberString = builder.toString();
+                        Token number = new Token(TokenType.NUMBER, numberString, List.of());
+                        token.children.add(number);
+                        if (isOperator) {
+                            token.children.add(new Token(TokenType.OPERATOR, Character.toString(c), List.of()));
+                        }
+
+                        builder.setLength(0);
+                        foundWhitespace = false;
+
+                        if (variableStart) {
+                            token.children.add(new Token(TokenType.OPERATOR, "*", List.of()));
+                            state = ParseState.STRING;
+                        } else {
+                            state = ParseState.SEEK;
                             continue;
                         }
+                    } else if (isWhitespace) {
+                        foundWhitespace = true;
+                        continue;
+                    } else if (!validNumberChar) {
+                        throw new RuntimeException();
+                    }
+                }
 
-                        if (isOperator || c == ')' || c == '(' || (i == token.raw.length() - 1)) {
-                            String string = builder.toString();
-                            boolean isVariable = isVariable(string);
-
-                            if (c != '(' && !isVariable) {
-                                throw new RuntimeException();
-                            }
-
-                            if (isVariable) {
-                                Token variableToken = new Token(TokenType.VARIABLE, string, List.of());
-                                token.children.add(variableToken);
-                            } else {
-                                // c == '('
-                                i = maybePush(token, i, stack, string);
-                            }
-
-                            if (isOperator) {
-                                token.children.add(new Token(TokenType.OPERATOR, Character.toString(c), List.of()));
-                            }
-
-                            builder.setLength(0);
-                            foundWhitespace = false;
-                            state = ParseState.SEEK;
-                        } else if (!validChar) {
+                if (state == ParseState.STRING) {
+                    if (validStringChar) {
+                        if (foundWhitespace) {
                             throw new RuntimeException();
                         }
+
+                        builder.append(c);
+                    } else if (isWhitespace) {
+                        foundWhitespace = true;
+                        continue;
+                    }
+
+                    if (isOperator || c == ')' || c == '(' || (i == token.raw.length() - 1)) {
+                        String string = builder.toString();
+                        boolean isVariable = isVariable(string);
+
+                        if (c != '(' && !isVariable) {
+                            throw new RuntimeException();
+                        }
+
+                        if (isVariable) {
+                            Token variableToken = new Token(TokenType.VARIABLE, string, List.of());
+                            token.children.add(variableToken);
+                        } else {
+                            // c == '('
+                            i = maybePush(token, i, stack, string);
+                        }
+
+                        if (isOperator) {
+                            token.children.add(new Token(TokenType.OPERATOR, Character.toString(c), List.of()));
+                        }
+
+                        builder.setLength(0);
+                        foundWhitespace = false;
+                        state = ParseState.SEEK;
+                    } else if (!validStringChar) {
+                        throw new RuntimeException();
                     }
                 }
             }
@@ -244,7 +246,7 @@ public final class Parser {
     }
 
 
-    private static @NotNull List<Token> simplify(Token token) {
+    private static List<Token> simplify(Token token) {
         List<Token> simplified = new ArrayList<>(4);
         for (int i = 0; i < token.children.size(); i++) {
             Token current = token.children.get(i);
@@ -267,8 +269,7 @@ public final class Parser {
                         throw new RuntimeException();
                     }
 
-                    char otherOperator = other.raw.charAt(0);
-                    switch (otherOperator) {
+                    switch (other.raw.charAt(0)) {
                         case '-' -> minusCount++;
                         case '*', '/', '^', ',' -> foundNonStackable = true;
                     }
@@ -314,6 +315,7 @@ public final class Parser {
 
             simplified.add(current);
         }
+
         return simplified;
     }
 }
