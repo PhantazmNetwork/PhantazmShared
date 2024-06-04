@@ -5,6 +5,6 @@ import org.junit.jupiter.api.Test;
 class ParserTest {
     @Test
     void test() {
-        Parser.parse("0-2");
+        Parser.compile("2/2y");
     }
 }

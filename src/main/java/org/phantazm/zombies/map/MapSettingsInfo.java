@@ -1,8 +1,5 @@
 package org.phantazm.zombies.map;
 
-import com.github.steanky.ethylene.core.ConfigElement;
-import com.github.steanky.ethylene.core.ConfigPrimitive;
-import com.github.steanky.ethylene.core.collection.ConfigList;
 import com.github.steanky.ethylene.mapper.annotation.Default;
 import com.github.steanky.vector.Vec3I;
 import net.kyori.adventure.key.Key;
@@ -17,6 +14,21 @@ import java.util.*;
 /**
  * Defines the general settings for a map.
  */
+@Default("""
+    {
+      mapDifficulty=1,
+      trackStats=true,
+      chunkLoadRange=10,
+      requiredPermissions=[],
+      coinsLostOnKnock=0.0,
+      reviveHealthFactor=1.0F,
+      coinLossFormat='',
+      reviveInvulnerabilityTicks=15,
+      killMobFormat='<player> killed <mob>!',
+      modifierReportFormat='Enabled modifiers: <modifiers>',
+      disallowedModifiers=[]
+    }
+    """)
 public record MapSettingsInfo(
     int mapDifficulty,
     int mapDataVersion,
@@ -167,60 +179,5 @@ public record MapSettingsInfo(
             Component.text("You cannot repair that window while enemies are nearby!", NamedTextColor.RED),
             Component.text("❤", NamedTextColor.RED), "", "",
             "<player> killed <mob>!", "Enabled modifiers: <modifiers>");
-    }
-
-    @Default("mapDifficulty")
-    public static @NotNull ConfigElement defaultMapDifficulty() {
-        return ConfigPrimitive.of(1);
-    }
-
-    @Default("trackStats")
-    public static @NotNull ConfigElement defaultTrackStats() {
-        return ConfigPrimitive.of(true);
-    }
-
-    @Default("chunkLoadRange")
-    public static @NotNull ConfigElement defaultChunkLoadRange() {
-        return ConfigPrimitive.of(10);
-    }
-
-    @Default("requiredPermissions")
-    public static @NotNull ConfigElement defaultRequiredPermissions() {
-        return ConfigList.of();
-    }
-
-    @Default("coinsLostOnKnock")
-    public static @NotNull ConfigElement defaultCoinsLostOnKnock() {
-        return ConfigPrimitive.of(0D);
-    }
-
-    @Default("reviveHealthFactor")
-    public static @NotNull ConfigElement defaultReviveHealthFactor() {
-        return ConfigPrimitive.of(1.0F);
-    }
-
-    @Default("coinLossFormat")
-    public static @NotNull ConfigElement defaultCoinLossFormat() {
-        return ConfigPrimitive.of("");
-    }
-
-    @Default("reviveInvulnerabilityTicks")
-    public static @NotNull ConfigElement defaultReviveInvulnerabilityTicks() {
-        return ConfigPrimitive.of(15);
-    }
-
-    @Default("killMobFormat")
-    public static @NotNull ConfigElement defaultKillMobFormat() {
-        return ConfigPrimitive.of("<player> killed <mob>!");
-    }
-
-    @Default("modifierReportFormat")
-    public static @NotNull ConfigElement defaultModifierReportFormat() {
-        return ConfigPrimitive.of("Enabled modifiers: <modifiers>");
-    }
-
-    @Default("disallowedModifiers")
-    public static @NotNull ConfigElement defaultDisallowedModifiers() {
-        return ConfigList.of();
     }
 }

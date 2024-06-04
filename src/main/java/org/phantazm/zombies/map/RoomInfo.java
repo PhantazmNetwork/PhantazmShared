@@ -1,7 +1,5 @@
 package org.phantazm.zombies.map;
 
-import com.github.steanky.ethylene.core.ConfigElement;
-import com.github.steanky.ethylene.core.ConfigPrimitive;
 import com.github.steanky.ethylene.core.collection.ConfigList;
 import com.github.steanky.ethylene.mapper.annotation.Default;
 import com.github.steanky.vector.Bounds3I;
@@ -15,6 +13,12 @@ import java.util.Objects;
 /**
  * Defines a room.
  */
+@Default("""
+    {
+      isSpawn=false,
+      openActions=[]
+    }
+    """)
 public record RoomInfo(
     @NotNull Key id,
     boolean isSpawn,
@@ -33,15 +37,5 @@ public record RoomInfo(
         Objects.requireNonNull(displayName);
         Objects.requireNonNull(regions);
         Objects.requireNonNull(openActions);
-    }
-
-    @Default("isSpawn")
-    public static @NotNull ConfigElement defaultIsSpawn() {
-        return ConfigPrimitive.of(false);
-    }
-
-    @Default("openActions")
-    public static @NotNull ConfigElement defaultOpenActions() {
-        return ConfigList.of();
     }
 }

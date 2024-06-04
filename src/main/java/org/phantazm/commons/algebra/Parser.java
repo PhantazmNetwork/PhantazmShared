@@ -1,6 +1,7 @@
 package org.phantazm.commons.algebra;
 
 import it.unimi.dsi.fastutil.ints.IntObjectPair;
+import it.unimi.dsi.fastutil.objects.Object2DoubleMap;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.*;
@@ -28,6 +29,68 @@ public final class Parser {
             String raw,
             List<Token> children) {
             this(type, raw, null, children);
+        }
+    }
+
+    public static class Statement {
+        private static class Entry {
+            private final Token token;
+            private final Iterator<Token> children;
+
+            private double result;
+
+            private Entry(Token token, Iterator<Token> children) {
+                this.token = token;
+                this.children = children;
+            }
+        }
+
+        private final Token root;
+
+        private Statement(Token root) {
+            this.root = Objects.requireNonNull(root);
+        }
+
+        public double evaluate(@NotNull Object2DoubleMap<String> variableMappings) {
+            Deque<Entry> stack = new ArrayDeque<>();
+            stack.push(new Entry(root, root.children.iterator()));
+
+            while (!stack.isEmpty()) {
+                Entry current = stack.peek();
+
+                if (current.token.children.size() == 1) {
+                    switch (current.token.type) {
+                        case NUMBER -> current.result = Double.parseDouble(current.token.raw);
+                        case FUNCTION -> {
+                            Token child = current.token.children.get(0);
+                            stack.push(new Entry(child, child.children.iterator()));
+                        }
+                        case VARIABLE -> {
+                            double result = variableMappings.getOrDefault(current.token.raw, Double.NaN);
+                            if (Double.isNaN(result)) {
+                                throw new RuntimeException();
+                            }
+
+                            current.result = result;
+                        }
+                        case OPERATOR -> throw new RuntimeException();
+
+                    }
+                    continue;
+                }
+
+                while (current.children.hasNext()) {
+                    Token operand = current.children.next();
+                    Token operator = current.children.next();
+                    Token secondOperand = current.children.next();
+
+
+                }
+
+                stack.pop();
+            }
+
+            return 0;
         }
     }
 
@@ -113,7 +176,7 @@ public final class Parser {
         return i;
     }
 
-    public static void parse(@NotNull String input) {
+    public static @NotNull Statement compile(@NotNull String input) {
         validateParenthesis(input);
 
         Deque<Token> stack = new ArrayDeque<>(4);
@@ -242,14 +305,13 @@ public final class Parser {
             token.children.addAll(simplified);
         }
 
-        System.out.println(root);
+        return new Statement(root);
     }
 
-
-    private static List<Token> simplify(Token token) {
+    private static List<Token> simplify(Token input) {
         List<Token> simplified = new ArrayList<>(4);
-        for (int i = 0; i < token.children.size(); i++) {
-            Token current = token.children.get(i);
+        for (int i = 0; i < input.children.size(); i++) {
+            Token current = input.children.get(i);
 
             if (current.type == TokenType.OPERATOR) {
                 char firstOperator = current.raw.charAt(0);
@@ -258,8 +320,8 @@ public final class Parser {
                 int minusCount = firstOperator == '-' ? 1 : 0;
                 boolean foundNonOperator = false;
                 int j;
-                for (j = i + 1; j < token.children.size(); j++) {
-                    Token other = token.children.get(j);
+                for (j = i + 1; j < input.children.size(); j++) {
+                    Token other = input.children.get(j);
                     if (other.type != TokenType.OPERATOR) {
                         foundNonOperator = true;
                         break;
@@ -294,7 +356,6 @@ public final class Parser {
                     if ((minusCount & 2) == 0) {
                         simplified.add(new Token(TokenType.OPERATOR, "+", List.of()));
                     } else {
-
                         simplified.add(new Token(TokenType.OPERATOR, "-", List.of()));
                     }
                 }
