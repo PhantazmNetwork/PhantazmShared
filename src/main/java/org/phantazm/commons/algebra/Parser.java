@@ -56,38 +56,7 @@ public final class Parser {
             stack.push(new Entry(root, root.children.iterator()));
 
             while (!stack.isEmpty()) {
-                Entry current = stack.peek();
 
-                if (current.token.children.size() == 1) {
-                    switch (current.token.type) {
-                        case NUMBER -> current.result = Double.parseDouble(current.token.raw);
-                        case FUNCTION -> {
-                            Token child = current.token.children.get(0);
-                            stack.push(new Entry(child, child.children.iterator()));
-                        }
-                        case VARIABLE -> {
-                            double result = variableMappings.getOrDefault(current.token.raw, Double.NaN);
-                            if (Double.isNaN(result)) {
-                                throw new RuntimeException();
-                            }
-
-                            current.result = result;
-                        }
-                        case OPERATOR -> throw new RuntimeException();
-
-                    }
-                    continue;
-                }
-
-                while (current.children.hasNext()) {
-                    Token operand = current.children.next();
-                    Token operator = current.children.next();
-                    Token secondOperand = current.children.next();
-
-
-                }
-
-                stack.pop();
             }
 
             return 0;
