@@ -1,6 +1,7 @@
 package org.phantazm.zombies.map;
 
 import com.github.steanky.ethylene.core.collection.ConfigNode;
+import com.github.steanky.ethylene.mapper.annotation.Default;
 import net.kyori.adventure.key.Key;
 import net.kyori.adventure.key.Keyed;
 import org.jetbrains.annotations.NotNull;
@@ -9,9 +10,11 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 
-/**
- * Represents a Zombies map.
- */
+@Default("""
+    {
+      upgrades=[]
+    }
+    """)
 public record MapInfo(
     @NotNull MapSettingsInfo settings,
     @NotNull PlayerCoinsInfo playerCoins,
@@ -22,6 +25,7 @@ public record MapInfo(
     @NotNull List<RoundInfo> rounds,
     @NotNull List<SpawnruleInfo> spawnrules,
     @NotNull List<SpawnpointInfo> spawnpoints,
+    @NotNull List<PlayerUpgradeInfo> upgrades,
     @NotNull ConfigNode leaderboard,
     @NotNull ConfigNode scoreboard,
     @NotNull ConfigNode corpse,
@@ -43,11 +47,11 @@ public record MapInfo(
     public MapInfo(@NotNull MapSettingsInfo settings, @NotNull PlayerCoinsInfo playerCoins,
         @NotNull List<RoomInfo> rooms, @NotNull List<DoorInfo> doors, @NotNull List<ShopInfo> shops,
         @NotNull List<WindowInfo> windows, @NotNull List<RoundInfo> rounds, @NotNull List<SpawnruleInfo> spawnrules,
-        @NotNull List<SpawnpointInfo> spawnpoints, @NotNull ConfigNode leaderboard,
-        @NotNull ConfigNode scoreboard, @NotNull ConfigNode corpse, @NotNull ConfigNode endless,
-        @NotNull WebhookInfo webhook) {
+        @NotNull List<SpawnpointInfo> spawnpoints, @NotNull List<PlayerUpgradeInfo> upgrades,
+        @NotNull ConfigNode leaderboard, @NotNull ConfigNode scoreboard, @NotNull ConfigNode corpse,
+        @NotNull ConfigNode endless, @NotNull WebhookInfo webhook) {
         rounds.sort(Comparator.comparingInt(RoundInfo::round));
-        
+
         this.settings = Objects.requireNonNull(settings);
         this.playerCoins = Objects.requireNonNull(playerCoins);
         this.rooms = Objects.requireNonNull(rooms);
@@ -57,6 +61,7 @@ public record MapInfo(
         this.rounds = Objects.requireNonNull(rounds);
         this.spawnrules = Objects.requireNonNull(spawnrules);
         this.spawnpoints = Objects.requireNonNull(spawnpoints);
+        this.upgrades = Objects.requireNonNull(upgrades);
         this.leaderboard = Objects.requireNonNull(leaderboard);
         this.scoreboard = Objects.requireNonNull(scoreboard);
         this.corpse = Objects.requireNonNull(corpse);

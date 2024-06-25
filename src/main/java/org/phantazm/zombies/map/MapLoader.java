@@ -25,6 +25,7 @@ public final class MapLoader {
                     namedList(path, codec, "spawnpoints"),
                     namedList(path, codec, "spawnrules"),
                     namedList(path, codec, "windows"),
+                    namedList(path, codec, "upgrades"),
                     namedSingle(path, codec, "coins.yml", "playerCoins"),
                     namedSingle(path, codec, "corpse.yml", "corpse"),
                     namedSingle(path, codec, "endless.yml", "endless"),
