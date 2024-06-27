@@ -134,6 +134,31 @@ public class ExtensionHolder {
     }
 
     /**
+     * Atomically removes a value from this holder.
+     *
+     * @param key the key used to remove the extension object
+     * @param <T> the type of value removed
+     * @return the removed value, or {@code null} if none was set
+     */
+    public <T> T remove(@NotNull Key<T> key) {
+        Object oldValue;
+        lock.lock();
+        try {
+            Long2ObjectOpenHashMap<Object> oldMap = this.map;
+            Long2ObjectOpenHashMap<Object> newMap = new Long2ObjectOpenHashMap<>(oldMap);
+
+            oldValue = newMap.remove(key.key);
+            newMap.trim();
+
+            this.map = newMap;
+        } finally {
+            lock.unlock();
+        }
+
+        return key.type.cast(oldValue);
+    }
+
+    /**
      * Creates an exact copy of this holder, preserving any stored values, and returns it.
      *
      * @return a copy of this holder
