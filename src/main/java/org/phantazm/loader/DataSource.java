@@ -99,6 +99,15 @@ public interface DataSource extends Closeable {
         return new NamedSource(new SingleFile(root.resolve(fileName), codec), configName, SourceType.SINGLE);
     }
 
+    static @NotNull NamedSource optionalNamedSingle(@NotNull Path root, @NotNull ConfigCodec codec, @NotNull String fileName,
+        @NotNull String configName, @NotNull ConfigElement defaultElement) {
+        Objects.requireNonNull(root);
+        Objects.requireNonNull(codec);
+        Objects.requireNonNull(fileName);
+        Objects.requireNonNull(configName);
+        return new NamedSource(new OptionalSingleFile(root.resolve(fileName), codec, defaultElement), configName, SourceType.SINGLE);
+    }
+
     static @NotNull DataSource singleFile(@NotNull Path file, @NotNull ConfigCodec codec) {
         Objects.requireNonNull(file);
         Objects.requireNonNull(codec);
@@ -470,9 +479,8 @@ public interface DataSource extends Closeable {
                 throw new NoSuchElementException();
             }
 
-            ConfigElement element = load(path);
             iterated = true;
-            return element;
+            return load(path);
         }
 
         @Override
@@ -482,6 +490,29 @@ public interface DataSource extends Closeable {
             }
 
             return DataLocation.path(path);
+        }
+    }
+
+    class OptionalSingleFile extends SingleFile {
+        private final ConfigElement defaultElement;
+
+        OptionalSingleFile(Path path, ConfigCodec codec, ConfigElement defaultElement) {
+            super(path, codec);
+
+            this.defaultElement = defaultElement;
+        }
+
+        @Override
+        public @NotNull ConfigElement next() throws IOException {
+            try {
+                return super.next();
+            } catch (CringeOverloadException exception) {
+                if (exception.getCause() instanceof NoSuchFileException) {
+                    return defaultElement;
+                }
+
+                throw exception;
+            }
         }
     }
 

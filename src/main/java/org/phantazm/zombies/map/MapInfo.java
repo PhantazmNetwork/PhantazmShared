@@ -12,7 +12,8 @@ import java.util.Objects;
 
 @Default("""
     {
-      upgrades=[]
+      upgrades=[],
+      upgradeActivator={}
     }
     """)
 public record MapInfo(
@@ -30,6 +31,7 @@ public record MapInfo(
     @NotNull ConfigNode scoreboard,
     @NotNull ConfigNode corpse,
     @NotNull ConfigNode endless,
+    @NotNull ConfigNode upgradeActivator,
     @NotNull WebhookInfo webhook) implements Keyed {
     /**
      * Constructs a new instances of this record.
@@ -49,7 +51,7 @@ public record MapInfo(
         @NotNull List<WindowInfo> windows, @NotNull List<RoundInfo> rounds, @NotNull List<SpawnruleInfo> spawnrules,
         @NotNull List<SpawnpointInfo> spawnpoints, @NotNull List<PlayerUpgradeInfo> upgrades,
         @NotNull ConfigNode leaderboard, @NotNull ConfigNode scoreboard, @NotNull ConfigNode corpse,
-        @NotNull ConfigNode endless, @NotNull WebhookInfo webhook) {
+        @NotNull ConfigNode endless, @NotNull ConfigNode upgradeActivator, @NotNull WebhookInfo webhook) {
         rounds.sort(Comparator.comparingInt(RoundInfo::round));
 
         this.settings = Objects.requireNonNull(settings);
@@ -66,6 +68,7 @@ public record MapInfo(
         this.scoreboard = Objects.requireNonNull(scoreboard);
         this.corpse = Objects.requireNonNull(corpse);
         this.endless = Objects.requireNonNull(endless);
+        this.upgradeActivator = Objects.requireNonNull(upgradeActivator);
         this.webhook = Objects.requireNonNull(webhook);
     }
 

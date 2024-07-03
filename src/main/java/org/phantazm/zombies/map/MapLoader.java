@@ -29,6 +29,7 @@ public final class MapLoader {
                     namedSingle(path, codec, "coins.yml", "playerCoins"),
                     namedSingle(path, codec, "corpse.yml", "corpse"),
                     namedSingle(path, codec, "endless.yml", "endless"),
+                    optionalNamedSingle(path, codec, "upgradeActivator.yml", "upgradeActivator", ConfigNode.EMPTY),
                     namedSingle(path, codec, "leaderboard.yml", "leaderboard"),
                     namedSingle(path, codec, "settings.yml", "settings"),
                     namedSingle(path, codec, "sidebar.yml", "scoreboard"),
