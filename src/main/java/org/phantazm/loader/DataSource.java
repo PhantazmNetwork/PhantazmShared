@@ -23,10 +23,30 @@ import java.util.stream.Stream;
  * can throw {@link IOException} on calls to {@link DataSource#hasNext()} or {@link DataSource#next()}.
  */
 public interface DataSource extends Closeable {
+    /**
+     * Determines if a new {@link ConfigElement} is available. If possible, this should perform caching to speed up a
+     * subsequent call to {@link DataSource#next()}.
+     *
+     * @return true iff there is an element available (i.e. {@link DataSource#next()} can be called)
+     * @throws IOException if an IO error occurs
+     */
     boolean hasNext() throws IOException;
 
+    /**
+     * Returns the next {@link ConfigElement}.
+     *
+     * @return the next ConfigElement
+     * @throws IOException            nf an IO error occurs
+     * @throws NoSuchElementException if this method is called without first invoking {@link DataSource#hasNext()}
+     */
     @NotNull ConfigElement next() throws IOException;
 
+    /**
+     * The last visited {@link DataLocation}. Useful for adding information to an exception context.
+     *
+     * @return the last data location
+     * @throws IllegalStateException if no call to {@link DataSource#next()} has been made before invoking this method
+     */
     @NotNull DataLocation lastLocation();
 
     enum SourceType {
@@ -44,16 +64,7 @@ public interface DataSource extends Closeable {
         }
     }
 
-    /**
-     * A function accepting some non-null value that produces a <i>new</i> {@link DataSource}.
-     *
-     * @param <T> the input type
-     */
-    interface DataSourceFunction<T> extends Function<@NotNull T, @NotNull DataSource> {
-
-    }
-
-    static @NotNull <T> DataSource composite(@NotNull DataSourceFunction<? super T> dataSourceFunction,
+    static @NotNull <T> DataSource composite(@NotNull Function<@NotNull T, @NotNull DataSource> dataSourceFunction,
         @NotNull Stream<? extends T> stream) {
         Objects.requireNonNull(dataSourceFunction);
         Objects.requireNonNull(stream);
@@ -216,8 +227,7 @@ public interface DataSource extends Closeable {
     }
 
     static @NotNull DataSource directory(@NotNull Path root, int depth, @NotNull ConfigCodec codec,
-        @NotNull PathMatcher pathMatcher,
-        boolean symlink) {
+        @NotNull PathMatcher pathMatcher, boolean symlink) {
         Objects.requireNonNull(root);
         Objects.requireNonNull(codec);
         Objects.requireNonNull(pathMatcher);
@@ -232,8 +242,8 @@ public interface DataSource extends Closeable {
             closed = true;
         }
 
-        protected void validateOpen() throws CringeOverloadException {
-            if (closed) throw CringeOverloadException.builder()
+        protected void validateOpen() throws LoaderException {
+            if (closed) throw LoaderException.builder()
                 .withMessage("this resource has been closed")
                 .build();
         }
@@ -252,11 +262,11 @@ public interface DataSource extends Closeable {
             this.codec = codec;
         }
 
-        protected ConfigElement load(Path path) throws CringeOverloadException {
+        protected ConfigElement load(Path path) throws LoaderException {
             try {
                 return Configuration.read(path, codec);
             } catch (IOException e) {
-                throw CringeOverloadException.builder()
+                throw LoaderException.builder()
                     .withCause(e)
                     .withMessage("failed to load data from file")
                     .withDataLocation(DataLocation.path(path))
@@ -266,7 +276,7 @@ public interface DataSource extends Closeable {
     }
 
     class Composite<T> extends DataSourceAbstract {
-        private final DataSourceFunction<? super T> function;
+        private final Function<@NotNull T, @NotNull DataSource> function;
         private final Stream<? extends T> stream;
 
         private Iterator<? extends T> iterator;
@@ -274,7 +284,7 @@ public interface DataSource extends Closeable {
         private DataSource currentSource;
         private DataLocation lastLocation;
 
-        private Composite(DataSourceFunction<? super T> function, Stream<? extends T> stream) {
+        private Composite(Function<@NotNull T, @NotNull DataSource> function, Stream<? extends T> stream) {
             this.function = function;
             this.stream = stream;
         }
@@ -506,7 +516,7 @@ public interface DataSource extends Closeable {
         public @NotNull ConfigElement next() throws IOException {
             try {
                 return super.next();
-            } catch (CringeOverloadException exception) {
+            } catch (LoaderException exception) {
                 if (exception.getCause() instanceof NoSuchFileException) {
                     return defaultElement;
                 }
@@ -540,7 +550,7 @@ public interface DataSource extends Closeable {
             this.symlink = symlink;
         }
 
-        private Iterator<Path> getIterator() throws CringeOverloadException {
+        private Iterator<Path> getIterator() throws LoaderException {
             if (iterator != null) {
                 return iterator;
             }
@@ -552,31 +562,31 @@ public interface DataSource extends Closeable {
             try {
                 return iterator = (stream = Files.walk(path, depth, symlink ? VISIT_SYMLINKS : NO_VISIT_SYMLINKS)).iterator();
             } catch (IOException e) {
-                throw CringeOverloadException.builder()
+                throw LoaderException.builder()
                     .withCause(e)
                     .withMessage("failed to initialize data stream")
                     .build();
             }
         }
 
-        private boolean hasNext0() throws CringeOverloadException {
+        private boolean hasNext0() throws LoaderException {
             Iterator<Path> itr = getIterator();
             try {
                 return itr.hasNext();
             } catch (UncheckedIOException e) {
-                throw CringeOverloadException.builder()
+                throw LoaderException.builder()
                     .withCause(e)
                     .withMessage("failed to access file")
                     .build();
             }
         }
 
-        private Path next0() throws CringeOverloadException {
+        private Path next0() throws LoaderException {
             Iterator<Path> itr = getIterator();
             try {
                 return itr.next();
             } catch (UncheckedIOException e) {
-                throw CringeOverloadException.builder()
+                throw LoaderException.builder()
                     .withCause(e)
                     .withMessage("failed to access file")
                     .build();
@@ -584,7 +594,7 @@ public interface DataSource extends Closeable {
         }
 
         @Override
-        public boolean hasNext() throws CringeOverloadException {
+        public boolean hasNext() throws LoaderException {
             validateOpen();
             if (cache != null) {
                 return true;
@@ -603,7 +613,7 @@ public interface DataSource extends Closeable {
         }
 
         @Override
-        public @NotNull ConfigElement next() throws CringeOverloadException {
+        public @NotNull ConfigElement next() throws LoaderException {
             validateOpen();
             Path cache = this.cache;
             if (cache != null) {
