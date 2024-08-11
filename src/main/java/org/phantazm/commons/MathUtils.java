@@ -27,7 +27,15 @@ public final class MathUtils {
     /**
      * Linearly interpolates between {@code start} and {@code end}, returning a value in range {@code [0, 1]} if value
      * falls between start and end, assuming {@code start < end}. If {@code start > end}, and
-     * {@code end < value < start}, the value returned will be in range {@code [-1, 0]}.
+     * {@code end < value < start}, the value returned will be in range {@code [-1, 0]}. Assuming {@code value} is not
+     * between {@code start} and {@code end}:
+     * <ul>
+     *     <li>If {@code start < end}: the function will return a value {@code < 0} if {@code value} falls below
+     *     {@code start}, and a value {@code > 1} if the value goes above {@code end}</li>
+     *
+     *     <li>If {@code end < start}: the function will return a value {@code > 0} if {@code value} falls below
+     *     {@code end}, and {@code < -1} if the value goes above {@code start}</li>
+     * </ul>
      *
      * @param start the starting value
      * @param end   the ending value
