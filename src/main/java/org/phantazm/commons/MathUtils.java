@@ -25,6 +25,20 @@ public final class MathUtils {
     }
 
     /**
+     * Linearly interpolates between {@code start} and {@code end}, returning a value in range {@code [0, 1]} if value
+     * falls between start and end, assuming {@code start < end}. If {@code start > end}, and
+     * {@code end < value < start}, the value returned will be in range {@code [-1, 0]}.
+     *
+     * @param start the starting value
+     * @param end   the ending value
+     * @param value the value to interpolate
+     * @return the linearly interpolated result
+     */
+    public static double lerp(double start, double end, double value) {
+        return (value - start) / (end - start);
+    }
+
+    /**
      * Clamps the provided value between min and max.
      * <p>
      * The behavior of this function is undefined if:
