@@ -1,7 +1,7 @@
 package org.phantazm.commons;
 
 import org.jetbrains.annotations.NotNull;
-import relocated.com.github.steanky.toolkit.function.ExceptionHandler;
+import com.github.steanky.toolkit.function.ExceptionHandler;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
