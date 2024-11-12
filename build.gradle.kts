@@ -45,20 +45,21 @@ repositories {
 }
 
 dependencies {
-    implementation("com.github.steanky:element-core:0.18.2")
-    implementation("com.github.steanky:ethylene-core:0.26.0")
-    implementation("com.github.steanky:ethylene-mapper:0.23.0")
-    implementation("com.github.steanky:vector-core:0.9.2")
-    implementation("com.github.steanky:toolkit-collection:0.4.0")
-    implementation("com.github.steanky:toolkit-function:0.4.0")
-    implementation("net.kyori:adventure-api:4.11.0")
-    implementation("net.kyori:adventure-text-minimessage:4.11.0")
+    implementation(libs.ethylene.core)
+    implementation(libs.ethylene.mapper)
+    implementation(libs.vector.core)
+    implementation(libs.toolkit.function)
+    implementation(libs.toolkit.collection)
+    implementation(libs.adventure.api)
+    implementation(libs.adventure.text.minimessage)
+    implementation(libs.jetbrains.annotations)
+    implementation(libs.adventure.text.minimessage)
 
-    compileOnly("org.jetbrains:annotations:23.0.0")
-    testCompileOnly("org.jetbrains:annotations:23.0.0")
+    compileOnly(libs.jetbrains.annotations)
+    testCompileOnly(libs.jetbrains.annotations)
 
-    testImplementation("org.junit.jupiter:junit-jupiter-api:5.9.0")
-    testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:5.9.0")
+    testImplementation(libs.junit.jupiter.api)
+    testRuntimeOnly(libs.junit.jupiter.engine)
 }
 
 tasks.withType<JavaCompile> {
