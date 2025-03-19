@@ -6,6 +6,9 @@ import org.jetbrains.annotations.NotNull;
 
 import java.util.*;
 
+/**
+ * Parsing algebra expressions. Used in config to make defining complex scaling without additional code possible.
+ */
 public final class Parser {
     private enum ParseState {
         SEEK,
