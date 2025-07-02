@@ -36,37 +36,27 @@ public class LoaderException extends IOException {
             .withStage(stage);
     }
 
+    private void appendInfo(StringBuilder builder, String name, Object data) {
+        if (data == null) return;
+
+        String sep = System.lineSeparator();
+        builder.append(sep);
+        builder.append(name);
+        builder.append(": ");
+        builder.append(data);
+    }
+
     @Override
     public String getMessage() {
         String detail = super.getMessage();
-        String sep = System.lineSeparator();
 
         StringBuilder builder = new StringBuilder();
         builder.append(detail);
 
-        if (stage != null) {
-            builder.append(sep);
-            builder.append("stage: ");
-            builder.append(stage);
-        }
-
-        if (location != null) {
-            builder.append(sep);
-            builder.append("location: ");
-            builder.append(location);
-        }
-
-        if (element != null) {
-            builder.append(sep);
-            builder.append("element: ");
-            builder.append(element);
-        }
-
-        if (elementPath != null) {
-            builder.append(sep);
-            builder.append("element path: ");
-            builder.append(elementPath);
-        }
+        appendInfo(builder, "stage", stage);
+        appendInfo(builder, "location", location);
+        appendInfo(builder, "element", element);
+        appendInfo(builder, "path", elementPath);
 
         return builder.toString();
     }
